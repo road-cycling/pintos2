@@ -459,7 +459,7 @@ static bool setup_stack (void **esp, char *args) {
   if (success) {
 
     //max 10 args
-    char *argv[10];
+    char *argv[20];
     char *token, *save_ptr;
     int argc = 0;
     token = strtok_r(args, " ", &save_ptr);
@@ -513,7 +513,7 @@ static bool setup_stack (void **esp, char *args) {
     for (i = 0; i < argc; i++) {
       free(argv[i]);
     }
-    hex_dump(*esp, *esp, PHYS_BASE - *esp, true);
+    //hex_dump(*esp, *esp, PHYS_BASE - *esp, true);
   }
 
   return success;
