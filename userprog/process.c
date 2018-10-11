@@ -17,7 +17,10 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
+#include "threads/synch.h"
 
+static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -30,9 +33,10 @@ process_execute (const char *file_name) {
   char *fn_copy;
   tid_t tid;
 
-  printf("File_Name is %s\n", file_name);
+  //printf("File_Name is %s\n", file_name);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
+  sema_init(&temporary, 0);
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
@@ -89,8 +93,8 @@ static void start_process (void *file_name_) {
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED)
-{
+process_wait (tid_t child_tid UNUSED) {
+  sema_down(&temporary);
   return -1;
 }
 
@@ -117,6 +121,7 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+    sema_up(&temporary);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -442,14 +447,75 @@ static bool setup_stack (void **esp, char *args) {
   bool success = false;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL)
-    {
+  if (kpage != NULL) {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE - 12;
+        //*esp = PHYS_BASE - 12;
+        *esp = PHYS_BASE;
       else
         palloc_free_page (kpage);
     }
+
+  if (success) {
+
+    //max 10 args
+    char *argv[10];
+    char *token, *save_ptr;
+    int argc = 0;
+    token = strtok_r(args, " ", &save_ptr);
+
+
+    //1. Parse Arguments by whitespaces
+    while (token != NULL) {
+      argv[argc] = malloc(strlen(token) + 1);
+      strlcpy(argv[argc++], token, strlen(token) + 1);
+      token = strtok_r(NULL, " ", &save_ptr);
+    }
+
+    int i;
+    char *ptr[argc];
+    //2. Write each argument in reverse including \0
+    for (i = argc - 1; i >= 0; i--) {
+      *esp -= strlen(argv[i]) + 1;
+      ptr[i] = *esp;
+      memcpy(*esp, argv[i], strlen(argv[i]) + 1);
+    }
+
+    //Word align to 4 bytes
+    while ((int)*esp % 4 != 0) {
+      *esp -= 1;
+      memset(*esp, /*(uint8_t)*/0, 1);
+    }
+
+    //Write four 0's as last argument
+    *esp -= 4;
+    memset(*esp, /*(char *)*/0, 4);
+
+    //write address of each argument
+    for (i = argc - 1; i >= 0; i--) {
+      *esp -= sizeof(ptr[i]); //4
+      memcpy(*esp, &ptr[i], sizeof(ptr[i]));
+      if (i == 0) {
+        char *stackHold = *esp;
+        *esp -= sizeof(char *);
+        memcpy(*esp, &stackHold, sizeof(char **));
+      }
+    }
+
+    //write argc
+    *esp -= sizeof(int);
+    memcpy(*esp, &argc, sizeof(int));
+
+    //write a 0 for the return address
+    *esp -= sizeof(void *);
+    memset(*esp, /*(void *)*/ 0, sizeof(void *));
+
+    for (i = 0; i < argc; i++) {
+      free(argv[i]);
+    }
+    hex_dump(*esp, *esp, PHYS_BASE - *esp, true);
+  }
+
   return success;
 }
 
