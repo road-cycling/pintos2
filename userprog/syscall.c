@@ -14,6 +14,8 @@
 //struct lock
 struct lock fileSystemLock;
 static struct list FD;
+typedef int pid_t;
+
 
 
 //helpers
@@ -26,11 +28,22 @@ static bool isValidAddr(uint32_t *);
 static void syscall_handler (struct intr_frame *);
 static int write(uint32_t *args);
 static int open(uint32_t *args);
+static int read(uint32_t *args);
 static unsigned tell (uint32_t *args);
+static void seek(uint32_t *args);
 static int filesize (uint32_t *args);
 static void close(uint32_t *args);
 static void exit(uint32_t *args);
 static void halt(void);
+
+/*
+Need to implement
+*/
+
+static bool remove(uint32_t *args); //bool remove (const char *file);
+static int wait(uint32_t *args); //int wait (pid_t);
+static pid_t exec (uint32_t *args); //pid_t exec(const char *file);
+
 
 
 struct fileDescriptor {
@@ -74,11 +87,11 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
   } else if (*args == SYS_FILESIZE) {
     f->eax = filesize(args);
   } else if (*args == SYS_READ) {
-
+    f->eax = read(args);
   } else if (*args == SYS_WRITE) {
     f->eax = write(args);
   } else if (*args == SYS_SEEK) {
-
+    seek(args);
   } else if (*args == SYS_TELL) {
     f->eax = tell(args);
   } else if (*args == SYS_CLOSE) {
@@ -119,8 +132,8 @@ static void close(uint32_t *args) {
 
   if (closeHelperThread(closeFD, &t->fdList, t) && (fdStruct = closeHelperGlobal(closeFD, &FD, t)) != NULL) {
     file_close(fdStruct->file);
-    if (fdStruct->fd < t->lowestOpenFD)
-      t->lowestOpenFD = fdStruct->fd;
+    //if (fdStruct->fd < t->lowestOpenFD)
+    //  t->lowestOpenFD = fdStruct->fd;
     free(fdStruct);
   }
 
@@ -155,6 +168,20 @@ static int open(uint32_t *args) {
   return setFD;
 }
 
+static void seek(uint32_t *args) {
+  int fd = (int) args[1];
+  unsigned position = (unsigned) args[2];
+  struct file *fp = NULL;
+
+  lock_acquire(&fileSystemLock);
+
+  fp = getFileFromFD(fd, thread_current());
+
+  if (fp != NULL) {
+    file_seek(fp, position);
+  }
+}
+
 static unsigned tell (uint32_t *args) {
   int fd = (int) args[1];
   unsigned nextByte = 0;
@@ -172,6 +199,30 @@ static unsigned tell (uint32_t *args) {
   return nextByte;
 }
 
+static int read(uint32_t *args) {
+ //int read(int fd, void *buffer, unsigned length);
+ //pass tests/userprog/read-stdout
+ //pass tests/userprog/read-bad-fd
+
+ //||
+ //FAIL tests/userprog/read-stdout
+ //FAIL tests/userprog/read-bad-fd
+ 
+ int fd = (int) args[1];
+ void *buffer = (void *) args[2];
+ unsigned length = (unsigned) args[3];
+ struct file *fp = NULL;
+
+ if (!isValidAddr(buffer)/* || args[1] == 0 || args[1] == 1*/) { return 0; }
+ lock_acquire(&fileSystemLock);
+ fp = getFileFromFD(fd, thread_current());
+ int bytesRead = file_read(fp, buffer, (uint32_t) length);
+ lock_release(&fileSystemLock);
+
+ return bytesRead;
+}
+
+
 static int filesize (uint32_t *args) {
   int fd = (int) args[1];
   int fileSize = 0;
@@ -185,14 +236,13 @@ static int filesize (uint32_t *args) {
   lock_release(&fileSystemLock);
 
   return fileSize;
-
 }
 
 //Helper Functions
 static bool isValidAddr(uint32_t *vaddr) {
 
   struct thread *cur = thread_current();
-  //check its a user address
+  //check if its a user address
   // int *PHYS_BASE = (int *)0xC0000000;
   // 0xC0000000 > vaddr
   return is_user_vaddr(vaddr) && pagedir_get_page(cur->pagedir,(void *) vaddr);
