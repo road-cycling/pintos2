@@ -458,8 +458,8 @@ static bool setup_stack (void **esp, char *args) {
 
   if (success) {
 
-    //max 10 args
-    char *argv[20];
+    //enough for args many to pass
+    char *argv[25];
     char *token, *save_ptr;
     int argc = 0;
     token = strtok_r(args, " ", &save_ptr);
