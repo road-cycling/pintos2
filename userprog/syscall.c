@@ -11,6 +11,13 @@
 //#include "lib/kernel/list.h"
 //struct lock
 
+//helpers
+static struct file *getFileFromFD(int fd, struct thread *);
+//struct fileDescriptor *closeHelper(int fd, struct list *, bool, struct thread *);
+static struct fileDescriptor *closeHelperThread(int fd, struct list *lst, struct thread *t);
+static struct fileDescriptor *closeHelperGlobal(int fd, struct list *lst, struct thread *t);
+static bool isValidAddr(uint32_t *);
+
 static void syscall_handler (struct intr_frame *);
 static int write(uint32_t *args);
 static int open(uint32_t *args);
@@ -25,6 +32,7 @@ static struct list FD;
 struct fileDescriptor {
   int fd;
   struct file *file;
+  struct thread *t;
   struct list_elem globalFDList;
   struct list_elem threadFDList;
 };
@@ -111,6 +119,7 @@ static int open(uint32_t *args) {
 
     ASSERT(setFD != 0 || setFD != 1);
 
+    fileDesc->t = t;
     fileDesc->fd = setFD;
     fileDesc->file = f;
 
@@ -127,11 +136,55 @@ static void halt(void) {
   shutdown_power_off();
 }
 
-static bool isValidAddr(uint32_t *vaddr) {
+
+//Helper Functions
+bool isValidAddr(uint32_t *vaddr) {
 
   struct thread *cur = thread_current();
   //check its a user address
   // int *PHYS_BASE = (int *)0xC0000000;
   // 0xC0000000 > vaddr
   return is_user_vaddr(vaddr) && pagedir_get_page(cur->pagedir,(void *) vaddr);
+}
+
+struct file *getFileFromFD(int fd, struct thread *t) {
+
+  struct list_elem *iter;
+  for (iter = list_begin(&t->fdList); iter != list_end(&t->fdList); iter = list_next(iter)) {
+    struct fileDescriptor *fdStruct = list_entry(iter, struct fileDescriptor, threadFDList);
+    if (fdStruct->fd == fd && fdStruct->t == t)
+      return fdStruct->file;
+  }
+  return NULL;
+}
+
+/* need 2 functions due to
+../../userprog/syscall.c:211: error: ‘struct fileDescriptor’ has no member named ‘global’
+../../userprog/syscall.c:211: error: ‘globalFDList’ undeclared (first use in this function)
+../../userprog/syscall.c:211: error: (Each undeclared identifier is reported only once
+../../userprog/syscall.c:211: error: for each function it appears in.)
+../../userprog/syscall.c:211: error: ‘threadFDList’ undeclared (first use in this function)
+*/
+struct fileDescriptor *closeHelperGlobal(int fd, struct list *lst, struct thread *t) {
+  struct list_elem *iter;
+  for (iter = list_begin(lst); iter != list_end(lst); iter = list_next(iter)) {
+    struct fileDescriptor *fdStruct = list_entry(iter, struct fileDescriptor, globalFDList);
+    if (fdStruct->fd == fd && fdStruct->t == t) {
+      list_remove(&fdStruct->globalFDList);
+      return fdStruct;
+    }
+  }
+  return NULL;
+}
+
+struct fileDescriptor *closeHelperThread(int fd, struct list *lst, struct thread *t) {
+  struct list_elem *iter;
+  for (iter = list_begin(lst); iter != list_end(lst); iter = list_next(iter)) {
+    struct fileDescriptor *fdStruct = list_entry(iter, struct fileDescriptor, threadFDList);
+    if (fdStruct->fd == fd && fdStruct->t == t) {
+      list_remove(&fdStruct->threadFDList);
+      return fdStruct;
+    }
+  }
+  return NULL;
 }
