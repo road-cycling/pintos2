@@ -10,13 +10,20 @@
 #include "devices/shutdown.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "userprog/process.h"
 //#include "lib/kernel/list.h"
 //struct lock
 struct lock fileSystemLock;
 static struct list FD;
 typedef int pid_t;
 
+/*
 
+Todo:
+1. Mark Threads Parent ID
+2. Deny writes to .exe @ void file_deny_write @ src/filesys/file.h @ load, exe loaded we want to deny writes
+
+*/
 
 //helpers
 static struct file *getFileFromFD(int fd, struct thread *);
@@ -26,23 +33,26 @@ static struct fileDescriptor *closeHelperGlobal(int fd, struct list *lst, struct
 static bool isValidAddr(uint32_t *);
 
 static void syscall_handler (struct intr_frame *);
+static bool create(uint32_t *args);
 static int write(uint32_t *args);
 static int open(uint32_t *args);
 static int read(uint32_t *args);
 static unsigned tell (uint32_t *args);
+static int wait(uint32_t *args); //int wait (pid_t);
 static void seek(uint32_t *args);
 static int filesize (uint32_t *args);
 static void close(uint32_t *args);
 static void exit(uint32_t *args);
+static pid_t exec (uint32_t *args);
 static void halt(void);
 
 /*
 Need to implement
 */
 
-static bool remove(uint32_t *args); //bool remove (const char *file);
-static int wait(uint32_t *args); //int wait (pid_t);
-static pid_t exec (uint32_t *args); //pid_t exec(const char *file);
+//static bool remove(uint32_t *args); //bool remove (const char *file);
+
+
 
 
 
@@ -75,11 +85,11 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
     exit(args);
     thread_exit();
   } else if (*args == SYS_EXEC) {
-
+    f->eax = exec(args);
   } else if (*args == SYS_WAIT) {
-
+    f->eax = wait(args);
   } else if (*args == SYS_CREATE) {
-
+    f->eax = create(args);
   } else if (*args == SYS_REMOVE) {
 
   } else if (*args == SYS_OPEN) {
@@ -97,6 +107,42 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
   } else if (*args == SYS_CLOSE) {
     close(args);
   }
+}
+
+static pid_t exec (uint32_t *args) {
+
+  if (!isValidAddr((void *) args[1])) { return 0; }
+  char *file = (char *) args[1];
+
+  //the functions exec calls accesses the FS, we must acquire the FS lock
+  lock_acquire(&fileSystemLock);
+
+  tid_t childID = process_execute(file);
+
+  lock_release(&fileSystemLock);
+
+  return childID;
+
+} //pid_t exec(const char *file);
+
+static bool create(uint32_t *args) {
+  if (!isValidAddr((void *) args[1])) { return false; }
+  char *file = (char *) args[1];
+  unsigned initial_size = (unsigned) args[2];
+
+  lock_acquire(&fileSystemLock);
+
+  bool result = filesys_create(file, initial_size);
+
+  lock_release(&fileSystemLock);
+
+  return result;
+}
+
+
+static int wait(uint32_t *args) {
+  pid_t id = (pid_t) args[1];
+  process_wait(id);
 }
 
 static void exit(uint32_t *args) {
@@ -207,7 +253,7 @@ static int read(uint32_t *args) {
  //||
  //FAIL tests/userprog/read-stdout
  //FAIL tests/userprog/read-bad-fd
- 
+
  int fd = (int) args[1];
  void *buffer = (void *) args[2];
  unsigned length = (unsigned) args[3];

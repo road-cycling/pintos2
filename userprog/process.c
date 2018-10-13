@@ -28,12 +28,10 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
-tid_t
-process_execute (const char *file_name) {
+tid_t process_execute (const char *file_name) {
   char *fn_copy;
   tid_t tid;
 
-  //printf("File_Name is %s\n", file_name);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   sema_init(&temporary, 0);
@@ -99,9 +97,7 @@ process_wait (tid_t child_tid UNUSED) {
 }
 
 /* Free the current process's resources. */
-void
-process_exit (void)
-{
+void process_exit (void) {
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
@@ -128,8 +124,7 @@ process_exit (void)
    thread.
    This function is called on every context switch. */
 void
-process_activate (void)
-{
+process_activate (void) {
   struct thread *t = thread_current ();
 
   /* Activate thread's page tables. */
