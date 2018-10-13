@@ -457,8 +457,7 @@ is_thread (struct thread *t)
 /* Does basic initialization of T as a blocked thread named
    NAME. */
 static void
-init_thread (struct thread *t, const char *name, int priority)
-{
+init_thread (struct thread *t, const char *name, int priority) {
   ASSERT (t != NULL);
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
   ASSERT (name != NULL);
@@ -469,7 +468,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
 #ifdef USERPROG
+  sema_init(&t->ifWait, 0);
   list_init(&t->fdList);
+  t->isWaitedOn = 0;
   t->lowestOpenFD = 2;
   t->parentID = -1;
 #endif
