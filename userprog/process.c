@@ -49,6 +49,15 @@ tid_t process_execute (const char *file_name) {
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
+
+  struct thread *createdThread = getThreadByID(tid);
+  if (createdThread != NULL) {
+    createdThread->parentID = thread_tid();
+  } else {
+    printf("Critical Error\n");
+    //shutdown_power_off();
+  }
+
   return tid;
 }
 
@@ -91,8 +100,18 @@ static void start_process (void *file_name_) {
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) {
-  sema_down(&temporary);
+process_wait (tid_t child_tid) {
+
+  struct thread *createdThread = getThreadByID(child_tid);
+  if (createdThread != NULL && createdThread->parentID == thread_tid()) {
+    //is a child
+    createdThread->isWaitedOn = 1;
+    sema_down(&createdThread->ifWait);
+
+  }// else {
+  //   // not sure about this
+  //   sema_down(&temporary);
+  // }
   return -1;
 }
 
@@ -119,9 +138,9 @@ void process_exit (void) {
 
     //if process is being waited on
     if (cur->isWaitedOn == 1) {
-      sema_up(&t->ifWait);
+      sema_up(&cur->ifWait);
     }
-    sema_up(&temporary);
+    //sema_up(&temporary);
 }
 
 /* Sets up the CPU for running user code in the current

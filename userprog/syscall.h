@@ -4,6 +4,7 @@
 void syscall_init (void);
 
 
+
 #endif /* userprog/syscall.h */
 
 
@@ -12,7 +13,7 @@ enum    {
   SYS_HALT,
   SYS_EXIT,
   SYS_EXEC,
-  SYS_WAIT, 
+  SYS_WAIT,
   SYS_CREATE,
   SYS_REMOVE,
   SYS_OPEN,

@@ -250,6 +250,22 @@ thread_unblock (struct thread *t)
   intr_set_level (old_level);
 }
 
+
+struct thread *getThreadByID(tid_t threadID) {
+
+  //ASSERT (intr_get_level () == INTR_OFF);
+  //interrupts are on (need lock for all_list?)
+
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e)) {
+        struct thread *t = list_entry (e, struct thread, allelem);
+        if (t->tid == threadID)
+          return t;
+  }
+  return (struct thread *)NULL;
+}
+
 /* Returns the name of the running thread. */
 const char *
 thread_name (void)
@@ -473,6 +489,7 @@ init_thread (struct thread *t, const char *name, int priority) {
   t->isWaitedOn = 0;
   t->lowestOpenFD = 2;
   t->parentID = -1;
+  t->exitValue = 0;
 #endif
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);

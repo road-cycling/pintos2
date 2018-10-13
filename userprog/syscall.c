@@ -79,6 +79,12 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
 
   uint32_t *args = ((uint32_t *) f->esp);
 
+  if (!isValidAddr((void *) args)) {
+    struct thread *cur = thread_current();
+    printf("%s: exit(-1)\n", cur->name);
+    thread_exit();
+  }
+
   if (*args == SYS_HALT) {
     halt();
   } else if (*args == SYS_EXIT) {
@@ -126,7 +132,9 @@ static pid_t exec (uint32_t *args) {
 } //pid_t exec(const char *file);
 
 static bool create(uint32_t *args) {
-  if (!isValidAddr((void *) args[1])) { return false; }
+  if (!isValidAddr((void *) args[1])) {
+    return false;
+  }
   char *file = (char *) args[1];
   unsigned initial_size = (unsigned) args[2];
 
@@ -147,7 +155,7 @@ static int wait(uint32_t *args) {
 
 static void exit(uint32_t *args) {
   struct thread *cur = thread_current();
-  printf("%s: exit(%d)\n", cur->name, *(args + 1));
+  printf("%s: exit(%d)\n", cur->name, args == NULL ? - 1 : *(args + 1));
 }
 
 static void halt(void) {
@@ -193,11 +201,10 @@ static int open(uint32_t *args) {
   struct file *f = NULL;
 
   lock_acquire(&fileSystemLock);
-  if (!isValidAddr((void *)args[1]) && (f = filesys_open(name)) != NULL) {
+  if (isValidAddr((void *)args[1]) && (f = filesys_open(name)) != NULL) {
     struct thread *t = thread_current();
     struct fileDescriptor *fileDesc = malloc(sizeof(struct fileDescriptor));
-    setFD = t->lowestOpenFD++;
-
+    setFD = ++t->lowestOpenFD;
     ASSERT(setFD != 0 || setFD != 1);
 
     fileDesc->t = t;
@@ -210,7 +217,6 @@ static int open(uint32_t *args) {
 
   }
   lock_release(&fileSystemLock);
-
   return setFD;
 }
 

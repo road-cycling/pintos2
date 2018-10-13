@@ -100,6 +100,7 @@ struct thread
     struct list fdList;
     tid_t parentID;
     int lowestOpenFD;
+    int exitValue;
     int isWaitedOn; //0 = not waited on // 1 = waited on.
     struct semaphore ifWait;
 #endif
@@ -124,6 +125,8 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+
+struct thread *getThreadByID(tid_t);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
