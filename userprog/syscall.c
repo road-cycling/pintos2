@@ -47,6 +47,7 @@ static int wait(uint32_t *args); //int wait (pid_t);
 static void seek(uint32_t *args);
 static int filesize (uint32_t *args);
 static void close(uint32_t *args);
+static bool remove(uint32_t *args); //bool remove (const char *file);
 static void exit(uint32_t *args);
 static pid_t exec (uint32_t *args);
 static void halt(void);
@@ -55,8 +56,6 @@ static void halt(void);
 /*
 Need to implement
 */
-
-//static bool remove(uint32_t *args); //bool remove (const char *file);
 
 
 struct returnStatus {
@@ -107,7 +106,7 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
   } else if (*args == SYS_CREATE) {
     f->eax = create(args);
   } else if (*args == SYS_REMOVE) {
-
+    f->eax = remove(args);
   } else if (*args == SYS_OPEN) {
     f->eax = open(args);
   } else if (*args == SYS_FILESIZE) {
@@ -140,6 +139,18 @@ static pid_t exec (uint32_t *args) {
   return childID;
 
 } //pid_t exec(const char *file);
+
+
+static bool remove(uint32_t *args) { //bool remove (const char *file);
+  if (!isValidAddr((void *) args[1]) || args == NULL) return false;
+
+  char *file = (char *) args[1];
+  lock_acquire(&fileSystemLock);
+  bool result = filesys_remove(file);
+  lock_release(&fileSystemLock);
+
+  return result;
+}
 
 static bool create(uint32_t *args) {
   if (!isValidAddr((void *) args[1])) {
@@ -187,12 +198,19 @@ static int write(uint32_t *args) {
   char* buffer = (char *) args[2];
   unsigned size = (unsigned) args[3];
 
+  lock_acquire(&fileSystemLock);
+
   if (fd == 1) {
     putbuf(buffer, size);
   } else {
     struct file* file = getFileFromFD(fd, thread_current());
+    if (file == NULL) {
+      lock_release(&fileSystemLock);
+      return 0;
+    }
     size = file_write(file, buffer, size);
   }
+  lock_release(&fileSystemLock);
 
   return size;
 }
@@ -253,6 +271,8 @@ static void seek(uint32_t *args) {
   if (fp != NULL) {
     file_seek(fp, position);
   }
+
+  lock_release(&fileSystemLock);
 }
 
 static unsigned tell (uint32_t *args) {
@@ -289,6 +309,10 @@ static int read(uint32_t *args) {
  if (!isValidAddr(buffer) || fd == 1 || fd == 2) { return 0; }
  lock_acquire(&fileSystemLock);
  fp = getFileFromFD(fd, thread_current());
+ if (fp == NULL) {
+   lock_release(&fileSystemLock);
+   return 0;
+ }
  int bytesRead = file_read(fp, buffer, (uint32_t) length);
  lock_release(&fileSystemLock);
 

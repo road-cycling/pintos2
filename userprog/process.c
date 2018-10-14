@@ -44,13 +44,11 @@ tid_t process_execute (const char *file_name) {
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
-  //printf("No Page Fault 1\n");
   //my change
   char *save_ptr = NULL;
-  //printf("Strtok_r\n");
   file_name = strtok_r(file_name, " ", &save_ptr);
   //my change end
-  //printf("No Page Fault 2\n");
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
@@ -267,11 +265,11 @@ bool load (const char *file_name, void (**eip) (void), void **esp) {
   token = strtok_r(file_n, " ", &save_ptr);
 
   file = filesys_open (token);
-  if (file == NULL)
-    {
+  if (file == NULL) {
       printf ("load: %s: open failed\n", file_name);
       goto done;
     }
+    file_deny_write(file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
