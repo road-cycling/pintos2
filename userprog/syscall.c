@@ -182,16 +182,17 @@ static void halt(void) {
 
 static int write(uint32_t *args) {
 
-  if (!isValidAddr((void *) args[2]) || args[1] == 0) { return 0; }
+  if (!isValidAddr((void *) args[2]) || args[1] == 0 || args[1] == 2) { return 0; }
   int fd = (int) args[1];
   char* buffer = (char *) args[2];
   unsigned size = (unsigned) args[3];
 
   if (fd == 1) {
     putbuf(buffer, size);
+  } else {
+    struct file* file = getFileFromFD(fd, thread_current());
+    size = file_write(file, buffer, size);
   }
-
-  //finish
 
   return size;
 }

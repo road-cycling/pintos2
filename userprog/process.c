@@ -19,8 +19,9 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "userprog/syscall.h"
 
-static struct semaphore temporary;
+//static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -29,22 +30,27 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t process_execute (const char *file_name) {
+
+  //printf("process_Execute called....args %s\n", file_name);
+
   char *fn_copy;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  sema_init(&temporary, 0);
+  //sema_init(&temporary, 0);
+  //printf("No Page Fault 0\n");
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
-
+  //printf("No Page Fault 1\n");
   //my change
-  char *save_ptr;
+  char *save_ptr = NULL;
+  //printf("Strtok_r\n");
   file_name = strtok_r(file_name, " ", &save_ptr);
   //my change end
-
+  //printf("No Page Fault 2\n");
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
@@ -67,7 +73,7 @@ static void start_process (void *file_name_) {
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
-
+  //printf("In start_process\n");
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -108,7 +114,8 @@ process_wait (tid_t child_tid) {
     createdThread->isWaitedOn = 1;
     sema_down(&createdThread->ifWait);
 
-    return getReturnStatus(child_tid);
+    int status = getReturnStatus(child_tid);
+    return status;
   }// else {
   //   // not sure about this
   //   sema_down(&temporary);
