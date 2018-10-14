@@ -142,7 +142,10 @@ static pid_t exec (uint32_t *args) {
 
 
 static bool remove(uint32_t *args) { //bool remove (const char *file);
-  if (!isValidAddr((void *) args[1]) || args == NULL) return false;
+  if (!isValidAddr((void *) args[1]) || args == NULL) {
+    exit(NULL);
+    thread_exit();
+  }
 
   char *file = (char *) args[1];
   lock_acquire(&fileSystemLock);
@@ -153,11 +156,17 @@ static bool remove(uint32_t *args) { //bool remove (const char *file);
 }
 
 static bool create(uint32_t *args) {
-  if (!isValidAddr((void *) args[1])) {
-    return false;
-  }
+
   char *file = (char *) args[1];
   unsigned initial_size = (unsigned) args[2];
+
+
+  if (!isValidAddr((void *) args[1]) || !isValidAddr((void *) file)) {
+    //printf("BAD PTR\n");
+    //return false;
+    exit(NULL);
+    thread_exit();
+  }
 
   lock_acquire(&fileSystemLock);
 
@@ -193,7 +202,10 @@ static void halt(void) {
 
 static int write(uint32_t *args) {
 
-  if (!isValidAddr((void *) args[2]) || args[1] == 0 || args[1] == 2) { return 0; }
+  if (!isValidAddr((void *) args[2]) || args[1] == 0 || args[1] == 2) {
+    exit(NULL);
+    thread_exit();
+  }
   int fd = (int) args[1];
   char* buffer = (char *) args[2];
   unsigned size = (unsigned) args[3];
@@ -239,8 +251,13 @@ static int open(uint32_t *args) {
   int setFD = -1;
   struct file *f = NULL;
 
+  if (!isValidAddr((void *) args[1])) {
+    exit(NULL);
+    thread_exit();
+  }
+
   lock_acquire(&fileSystemLock);
-  if (isValidAddr((void *)args[1]) && (f = filesys_open(name)) != NULL) {
+  if ((f = filesys_open(name)) != NULL) {
     struct thread *t = thread_current();
     struct fileDescriptor *fileDesc = malloc(sizeof(struct fileDescriptor));
     setFD = ++t->lowestOpenFD;
@@ -253,7 +270,6 @@ static int open(uint32_t *args) {
     //implicitly protected
     list_push_back(&t->fdList, &fileDesc->threadFDList);
     list_push_back(&FD ,&fileDesc->globalFDList);
-
   }
   lock_release(&fileSystemLock);
   return setFD;
@@ -306,7 +322,10 @@ static int read(uint32_t *args) {
  unsigned length = (unsigned) args[3];
  struct file *fp = NULL;
 
- if (!isValidAddr(buffer) || fd == 1 || fd == 2) { return 0; }
+ if (!isValidAddr(buffer) || fd == 1 || fd == 2) {
+   exit(NULL);
+   thread_exit();
+ }
  lock_acquire(&fileSystemLock);
  fp = getFileFromFD(fd, thread_current());
  if (fp == NULL) {
