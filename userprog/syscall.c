@@ -297,7 +297,7 @@ static bool isValidAddr(uint32_t *vaddr) {
   //check if its a user address
   // int *PHYS_BASE = (int *)0xC0000000;
   // 0xC0000000 > vaddr
-  return is_user_vaddr(vaddr) && pagedir_get_page(cur->pagedir,(void *) vaddr);
+  return vaddr != NULL && is_user_vaddr(vaddr) && pagedir_get_page(cur->pagedir,(void *) vaddr);
 }
 
 static struct file *getFileFromFD(int fd, struct thread *t) {
