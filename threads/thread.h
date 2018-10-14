@@ -100,7 +100,7 @@ struct thread
     struct list fdList;
     tid_t parentID;
     int lowestOpenFD;
-    int exitValue;
+    //int exitValue;
     int isWaitedOn; //0 = not waited on // 1 = waited on.
     struct semaphore ifWait;
 #endif

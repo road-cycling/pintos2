@@ -489,7 +489,7 @@ init_thread (struct thread *t, const char *name, int priority) {
   t->isWaitedOn = 0;
   t->lowestOpenFD = 2;
   t->parentID = -1;
-  t->exitValue = 0;
+  //t->exitValue = 0;
 #endif
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);

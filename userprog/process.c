@@ -108,6 +108,7 @@ process_wait (tid_t child_tid) {
     createdThread->isWaitedOn = 1;
     sema_down(&createdThread->ifWait);
 
+    return getReturnStatus(child_tid);
   }// else {
   //   // not sure about this
   //   sema_down(&temporary);
@@ -119,6 +120,10 @@ process_wait (tid_t child_tid) {
 void process_exit (void) {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  if (cur->isWaitedOn == 1) {
+    sema_up(&cur->ifWait);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -137,9 +142,7 @@ void process_exit (void) {
     }
 
     //if process is being waited on
-    if (cur->isWaitedOn == 1) {
-      sema_up(&cur->ifWait);
-    }
+
     //sema_up(&temporary);
 }
 
