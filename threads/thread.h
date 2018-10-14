@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -96,6 +97,12 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct list fdList;
+    tid_t parentID;
+    int lowestOpenFD;
+    //int exitValue;
+    int isWaitedOn; //0 = not waited on // 1 = waited on.
+    struct semaphore ifWait;
 #endif
 
     /* Owned by thread.c. */
@@ -118,6 +125,8 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+
+struct thread *getThreadByID(tid_t);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
