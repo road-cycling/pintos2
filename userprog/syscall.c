@@ -43,11 +43,11 @@ static int write(uint32_t *args);
 static int open(uint32_t *args);
 static int read(uint32_t *args);
 static unsigned tell (uint32_t *args);
-static int wait(uint32_t *args); //int wait (pid_t);
+static int wait(uint32_t *args);
 static void seek(uint32_t *args);
 static int filesize (uint32_t *args);
 static void close(uint32_t *args);
-static bool remove(uint32_t *args); //bool remove (const char *file);
+static bool remove(uint32_t *args);
 static void exit(uint32_t *args);
 static pid_t exec (uint32_t *args);
 static void halt(void);
@@ -81,7 +81,21 @@ void syscall_init (void) {
   lock_init(&fileSystemLock);
 }
 
-
+// void (*syscall_ptr[])(uint32_t *) = {
+//   halt,
+//   exit,
+//   exec,
+//   wait,
+//   create,
+//   remove,
+//   open,
+//   filesize,
+//   read,
+//   write,
+//   seek,
+//   tell,
+//   close
+// };
 
 
 static void syscall_handler (struct intr_frame *f UNUSED) {
@@ -94,6 +108,8 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
     thread_exit();
   }
 
+  // f->eax = syscall_ptr[*args](args);
+    //f->eax = (*syscall_ptr[1])();
   if (*args == SYS_HALT) {
     halt();
   } else if (*args == SYS_EXIT) {
@@ -186,7 +202,25 @@ static int wait(uint32_t *args) {
 static void exit(uint32_t *args) {
 
   struct thread *cur = thread_current();
+
   int returnStatus = args == NULL ? -1 : (int)*(args + 1);
+
+  // int returnStatus = args == NULL ? -1 :
+  //                       isValidAddr((void *) args[1]) ?
+  //                       (int) *(args + 1) :
+  //                       -1;
+  //int returnStatus = isValidAddr((void *) args[1]) ? (int) *(args + 1) : -1;
+  //int returnStatus = 0;
+
+  // if (isValidAddr((void *) args[1])) {
+  //   printf("Address is valid\n");
+  //   returnStatus = (int) *(args + 1);
+  // } else {
+  //   printf("Address is not valid");
+  //   returnStatus = -1;
+  // }
+
+
 
   if (cur->isWaitedOn == 1) {
     setReturnStatus(cur->tid, returnStatus);
@@ -384,6 +418,20 @@ int getReturnStatus(tid_t threadID) {
 static bool isValidAddr(uint32_t *vaddr) {
 
   struct thread *cur = thread_current();
+
+  // if (vaddr == NULL) {
+  //   //printf("%d\n", *vaddr);
+  //   printf("vaddr is null\n");
+  // }
+  //
+  // if (!is_user_vaddr(vaddr)) {
+  //   printf("kernel address\n");
+  // }
+  //
+  // if (!pagedir_get_page(cur->pagedir, (void *) vaddr)) {
+  //   printf("Address not mapped in p page dir\n");
+  //   printf("%d\n", *vaddr);
+  // }
   //check if its a user address
   // int *PHYS_BASE = (int *)0xC0000000;
   // 0xC0000000 > vaddr
