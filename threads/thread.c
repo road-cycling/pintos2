@@ -102,9 +102,7 @@ thread_init (void)
 
 /* Starts preemptive thread scheduling by enabling interrupts.
    Also creates the idle thread. */
-void
-thread_start (void)
-{
+void thread_start (void) {
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
