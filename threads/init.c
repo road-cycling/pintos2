@@ -28,6 +28,7 @@
 #include "userprog/gdt.h"
 #include "userprog/syscall.h"
 #include "userprog/tss.h"
+#include "vm/swap.h"
 #else
 #include "tests/threads/tests.h"
 #endif
@@ -73,9 +74,7 @@ static void locate_block_device (enum block_type, const char *name);
 int main (void) NO_RETURN;
 
 /* Pintos main program. */
-int
-main (void)
-{
+int main (void) {
   char **argv;
 
   /* Clear BSS. */  
@@ -98,6 +97,12 @@ main (void)
   palloc_init (user_page_limit);
   malloc_init ();
   paging_init ();
+
+  //Code Change
+#ifdef VM
+  swap_init ();
+  //End code change
+#endif
 
   /* Segmentation. */
 #ifdef USERPROG

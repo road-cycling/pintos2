@@ -76,16 +76,14 @@ block_first (void)
 /* Returns the block device following BLOCK in kernel probe
    order, or a null pointer if BLOCK is the last block device. */
 struct block *
-block_next (struct block *block)
-{
+block_next (struct block *block) {
   return list_elem_to_block (list_next (&block->list_elem));
 }
 
 /* Returns the block device with the given NAME, or a null
    pointer if no block device has that name. */
 struct block *
-block_get_by_name (const char *name)
-{
+block_get_by_name (const char *name) {
   struct list_elem *e;
 
   for (e = list_begin (&all_blocks); e != list_end (&all_blocks);
@@ -162,15 +160,12 @@ block_type (struct block *block)
 
 /* Prints statistics for each block device used for a Pintos role. */
 void
-block_print_stats (void)
-{
+block_print_stats (void) {
   int i;
 
-  for (i = 0; i < BLOCK_CNT; i++)
-    {
+  for (i = 0; i < BLOCK_CNT; i++) {
       struct block *block = block_by_role[i];
-      if (block != NULL)
-        {
+      if (block != NULL) {
           printf ("%s (%s): %llu reads, %llu writes\n",
                   block->name, block_type_name (block->type),
                   block->read_cnt, block->write_cnt);
@@ -220,4 +215,3 @@ list_elem_to_block (struct list_elem *list_elem)
           ? list_entry (list_elem, struct block, list_elem)
           : NULL);
 }
-
