@@ -151,6 +151,24 @@ static void page_fault (struct intr_frame *f) {
     thread_exit ();
   }
 
+  // @@ pgroundown
+
+  // locate the page that faulted in the supp page table
+  // if memory reference is valid use the supp page table entry to locate the data that goes on the page
+  // @ fs @ swap @ all zero ?
+
+
+  // if SPT says user process should not be here or kvaddr // or write
+  //read only page then terminate
+
+  //obtain a frame to store the page
+  // fetch data into the frame
+  // point pte for faulting address to physical page
+
+  // caused by kernel @ kill process
+
+  //invalid vaddr @ nullptr  @ KVADDR @ below stack @0x08048000 @ does not appear to be stack access ..not within 32 bytes
+
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

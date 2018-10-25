@@ -105,6 +105,10 @@ struct thread
     struct semaphore ifWait;
 #endif
 
+#ifdef VM
+    struct hash s_pte;
+#endif
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

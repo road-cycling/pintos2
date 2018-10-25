@@ -22,6 +22,10 @@
 #include "threads/synch.h"
 #include "userprog/syscall.h"
 
+#ifdef VM
+#include "vm/page.h"
+#endif
+
 //static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -72,6 +76,12 @@ static void start_process (void *file_name_) {
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
+
+  #ifdef VM
+  struct thread *cur = thread_current();
+  hash_init(&t->s_pte, &page_hash, &page_less, NULL);
+  #endif
+
   //printf("In start_process\n");
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);

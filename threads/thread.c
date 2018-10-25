@@ -489,6 +489,9 @@ init_thread (struct thread *t, const char *name, int priority) {
   t->parentID = -1;
   //t->exitValue = 0;
 #endif
+// #ifdef VM
+//
+// #endif
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
 }
