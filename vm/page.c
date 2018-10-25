@@ -27,13 +27,15 @@ bool page_less (const struct hash_elem *a, const struct hash_elem *b, void *aux 
   return a->user_vaddr < b->user_vaddr;
 }
 
-struct sPageTableEntry *page_lookup (void *user_vaddr) {
+struct sPageTableEntry *page_lookup (void *user_vaddr, struct hash *s_pte) {
   struct sPageTableEntry p;
   struct hash_elem *e;
   p.user_vaddr = user_vaddr;
-  e = hash_find (&thread_current()->s_pte, &p.hash_elem);
+  e = hash_find (s_pte, &p.hash_elem);
   return e != NULL ? hash_entry (e, struct sPageTableEntry, hash_elem) : NULL;
 }
+
+
 
 
 
