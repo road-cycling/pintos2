@@ -1,14 +1,16 @@
 #include "userprog/process.h"
 #include <debug.h>
 #include <inttypes.h>
+#include <hash.h>
 #include <round.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "userprog/gdt.h"
+#include "userprog/tss.h"
 #include "userprog/syscall.h"
 #include "userprog/pagedir.h"
-#include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -20,7 +22,6 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
-#include "userprog/syscall.h"
 
 #ifdef VM
 #include "vm/page.h"
@@ -77,10 +78,10 @@ static void start_process (void *file_name_) {
   struct intr_frame if_;
   bool success;
 
-  #ifdef VM
+#ifdef VM
   struct thread *cur = thread_current();
-  hash_init(&t->s_pte, &page_hash, &page_less, NULL);
-  #endif
+  hash_init(&cur->s_pte, &page_hash, &page_less, NULL);
+#endif
 
   //printf("In start_process\n");
   /* Initialize interrupt frame and load executable. */

@@ -1,6 +1,6 @@
-#include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -11,20 +11,26 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "userprog/process.h"
-//#include "lib/kernel/list.h"
-//struct lock
+
 struct lock fileSystemLock;
 static struct list FD;
 static struct list returnStatusStruct;
 typedef int pid_t;
 
-/*
+struct returnStatus {
+  tid_t threadID;
+  int retStatus;
+  struct list_elem ret;
+};
 
-Todo:
-1. Mark Threads Parent ID
-2. Deny writes to .exe @ void file_deny_write @ src/filesys/file.h @ load, exe loaded we want to deny writes
+struct fileDescriptor {
+  int fd;
+  struct file *file;
+  struct thread *t;
+  struct list_elem globalFDList;
+  struct list_elem threadFDList;
+};
 
-*/
 
 //helpers
 static struct file *getFileFromFD(int fd, struct thread *);
@@ -32,11 +38,9 @@ static struct file *getFileFromFD(int fd, struct thread *);
 static struct fileDescriptor *closeHelperThread(int fd, struct list *lst, struct thread *t);
 static struct fileDescriptor *closeHelperGlobal(int fd, struct list *lst, struct thread *t);
 
-//need to add locks to this
 void setReturnStatus(tid_t threadID, int retStatus);
 int getReturnStatus(tid_t threadID);
 static bool isValidAddr(uint32_t *);
-
 static void syscall_handler (struct intr_frame *);
 static bool create(uint32_t *args);
 static int write(uint32_t *args);
@@ -57,45 +61,12 @@ static void halt(void);
 Need to implement
 */
 
-
-struct returnStatus {
-  tid_t threadID;
-  int retStatus;
-  struct list_elem ret;
-};
-
-struct fileDescriptor {
-  int fd;
-  struct file *file;
-  struct thread *t;
-  struct list_elem globalFDList;
-  struct list_elem threadFDList;
-};
-
-
-
 void syscall_init (void) {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
   list_init(&FD);
   list_init(&returnStatusStruct);
   lock_init(&fileSystemLock);
 }
-
-// void (*syscall_ptr[])(uint32_t *) = {
-//   halt,
-//   exit,
-//   exec,
-//   wait,
-//   create,
-//   remove,
-//   open,
-//   filesize,
-//   read,
-//   write,
-//   seek,
-//   tell,
-//   close
-// };
 
 
 static void syscall_handler (struct intr_frame *f UNUSED) {
@@ -392,7 +363,6 @@ static int filesize (uint32_t *args) {
 
 void setReturnStatus(tid_t threadID, int retStatus) {
   struct returnStatus *rs = malloc(sizeof(struct returnStatus));
-  //trash error handling
   if (rs != NULL) {
     rs->threadID = threadID;
     rs->retStatus = retStatus;
