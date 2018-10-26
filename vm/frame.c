@@ -1,21 +1,20 @@
 #include <list.h>
 #include <stdio.h>
 #include "vm/frame.h"
-// #include "vm/page.h"
+#include "vm/page.h"
 #include "vm/swap.h"
 #include "threads/thread.h"
 #include "threads/palloc.h"
 #include "threads/pte.h"
 #include "threads/interrupt.h"
 #include "threads/malloc.h"
-#include "userprog/process.c"
 
 //CC vs _ inconsistent
 
 static struct list frame_table;
 static struct lock frame_table_lock;
 // add frame on call to palloc_get_page
-
+static bool install_page (void *upage, void *kpage, bool writable);
 
 void frame_init(void) {
   list_init(&frame_table);
@@ -75,7 +74,7 @@ void setUpFrame(uint32_t *faultingAddr) {
   // @ rounded down ?
 
   struct thread *t = thread_current();
-  struct sPageTableEntry *sPTE = page_lookup(pg_round_down(faultingAddr), &t->s_pte);
+  struct sPageTableEntry *sPTE = page_lookup(pg_round_down((void *)faultingAddr), &t->s_pte);
 
   if (sPTE == NULL)
     PANIC ("Couldn't find sPTE for vaddr.\n");
@@ -97,6 +96,24 @@ void setUpFrame(uint32_t *faultingAddr) {
   install_frame(pg_round_down(faultingAddr), sPTE);
   // else nothing for us to do
 //PF done
+}
+
+/* Adds a mapping from user virtual address UPAGE to kernel
+   virtual address KPAGE to the page table.
+   If WRITABLE is true, the user process may modify the page;
+   otherwise, it is read-only.
+   UPAGE must not already be mapped.
+   KPAGE should probably be a page obtained from the user pool
+   with palloc_get_page().
+   Returns true on success, false if UPAGE is already mapped or
+   if memory allocation fails. */
+static bool install_page (void *upage, void *kpage, bool writable) {
+  struct thread *t = thread_current ();
+
+  /* Verify that there's not already a page at that virtual
+     address, then map our page there. */
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
 

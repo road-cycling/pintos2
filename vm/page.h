@@ -2,6 +2,7 @@
 #define VM_PAGE_H
 
 #include "filesys/off_t.h"
+#include <hash.h>
 
 #define LOC_ZERO 0x0
 #define LOC_SWAP 0x1

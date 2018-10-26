@@ -35,7 +35,7 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
-tid_t process_execute (const char *file_name) {
+tid_t process_execute (char *file_name) {
 
   //printf("process_Execute called....args %s\n", file_name);
 
