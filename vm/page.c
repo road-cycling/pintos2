@@ -34,6 +34,14 @@ struct sPageTableEntry *page_lookup (void *user_vaddr, struct hash *s_pte) {
   return e != NULL ? hash_entry (e, struct sPageTableEntry, hash_elem) : NULL;
 }
 
+// void page_free(struct hash_elem *hash, void *aux UNUSED) {
+//   //free entry vaddr entry in hash table from munmap syscall
+//
+// }
+//
+
+
+
 
 
 

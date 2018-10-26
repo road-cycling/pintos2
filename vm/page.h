@@ -23,6 +23,7 @@ struct sPageTableEntry {
 
 unsigned page_hash (const struct hash_elem *, void * UNUSED);
 bool page_less (const struct hash_elem *, const struct hash_elem *, void * UNUSED);
+// void page_free (struct hash_elem*, void * UNUSED);
 struct sPageTableEntry *page_lookup (void *, struct hash *);
 struct sPageTableEntry *getSupPTE(uint32_t *);
 

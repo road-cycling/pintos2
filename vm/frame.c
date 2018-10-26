@@ -24,12 +24,12 @@ void frame_init(void) {
 //palloc_get_page returns KVA
 void install_frame(uint32_t* kv_addr, struct sPageTableEntry *entry) {
   struct frame_table_entry *fte = malloc(sizeof(struct frame_table_entry));
+
   fte->frame = kv_addr;
   fte->owner = thread_current();
   fte->aux   = entry == NULL
-                  ? getSupPTE(kv_addr) /* user vaddr vs kvaddr ? */
+                  ? getSupPTE(kv_addr)
                   : entry;
-
 
   lock_acquire(&frame_table_lock);
   list_push_back(&frame_table, &fte->elem);
@@ -37,10 +37,10 @@ void install_frame(uint32_t* kv_addr, struct sPageTableEntry *entry) {
 }
 
 void evict_frame() {
-  // Plain and simple eviction for now
-  // LRU / Clock later
+
   ASSERT(list_begin(&frame_table) != NULL);
 
+  //Cant disable interrupts, need some other way
   enum intr_level old_level;
   old_level = intr_disable ();
 
@@ -49,51 +49,80 @@ void evict_frame() {
 
   ASSERT(fte->owner->pagedir && PTE_P);
 
-  //mark bit as not present in page table
-  // check vaddr / kvaddr
+  //flip present bit in owning threads page table
   uint32_t *pt = pde_get_pt(*fte->owner->pagedir);
+  //This doesnt clear the TLB
   *pt &= ~PTE_P;
 
-  //write frame to swap disk ... save offset in SPTE
+  //write to disk
   size_t swapDiskOffset = write_to_block(fte->frame);
-  fte->aux->location = 0;
   setLocation(LOC_SWAP, fte->aux->location);
   fte->aux->diskOffset = swapDiskOffset;
 
   palloc_free_page(fte->aux->user_vaddr);
-
   intr_set_level(old_level);
 
-  /*
-    check if disk ? check if zeroed
-  */
+  //need to check disk @ zeroed page
   free(fte);
 }
 
-void setUpFrame(uint32_t *faultingAddr) {
-  // @ rounded down ?
+
+uint32_t *getFrameToInstall(enum palloc_flags flags, bool eviction) {
+  uint32_t *kpage = palloc_get_page(flags);
+
+  if (kpage == NULL && eviction) {
+    evict_frame();
+
+    kpage = palloc_get_page(flags);
+
+    if (kpage == NULL)
+      PANIC("No Free Frame Post Eviction\n");
+  }
+
+  return kpage;
+}
+
+void setUpStackFrame(uint32_t *faultingAddr) {
+  struct thread *t = thread_current();
+  uint32_t *fault_addr_rd = pg_round_down(fault_addr);
+
+  ASSERT(page_lookup(fault_addr_rd, &t->s_pte) == NULL);
+
+  uint32_t *kpage = getFrameToInstall(PAL_USER | PAL_ZERO, true);
+
+  if (!install_page(fault_addr_rd, kpage, true))
+    PANIC("Couldn't install stack frame");
+
+  install_frame(fault_addr_rd, NULL);
+}
+
+
+void setUpFrame(uint32_t *faultingAddr, bool eviction) {
 
   struct thread *t = thread_current();
-  struct sPageTableEntry *sPTE = page_lookup(pg_round_down((void *)faultingAddr), &t->s_pte);
+  uint32_t *fault_addr_rd = pg_round_down(fault_addr);
+
+  struct sPageTableEntry *sPTE = page_lookup(fault_addr_rd, &t->s_pte);
 
   if (sPTE == NULL)
     PANIC ("Couldn't find sPTE for vaddr.\n");
 
-  evict_frame();
+  uint32_t *kpage = getFrameToInstall(PAL_USER, true);
 
-  uint32_t *kpage = palloc_get_page(PAL_USER | PAL_ZERO);
-
-  if (kpage == NULL || !install_page(pg_round_down(faultingAddr), kpage, true))
-    PANIC("Kpage null || Couldn't install page.\n");
+  if (!install_page(fault_addr_rd, kpage, true))
+    PANIC("Couldn't install page.\n");
 
   if (sPTE->location & LOC_SWAP) {
     read_from_block(kpage, sPTE->diskOffset);
   } else if (sPTE->location & LOC_FILE) {
-    //to be implemented
+    //to be implemented with mmap
+    printf("UNUSED");
+  } else if (sPTE->location & LOC_ZERO) {
+    //memset(kpage, 0, 4096);
     printf("UNUSED");
   }
 
-  install_frame(pg_round_down(faultingAddr), sPTE);
+  install_frame(fault_addr_rd, sPTE);
   // else nothing for us to do
 //PF done
 }

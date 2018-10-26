@@ -145,29 +145,28 @@ static void page_fault (struct intr_frame *f) {
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  //Null Addr or User is trying to access K memory
-  if (fault_addr == NULL || (user && fault_addr >= (int *)0xC0000000)) {
+
+  if (fault_addr == NULL                        ||
+      (user && fault_addr >= (int *)0xC0000000) ||
+      fault_addr <= 0x08048000                  ||
+      !not_present) {
     printf("%s: exit(-1)\n", thread_current()->name);
     thread_exit ();
   }
 
-  // @@ pgroundown
-
-  // locate the page that faulted in the supp page table
-  // if memory reference is valid use the supp page table entry to locate the data that goes on the page
-  // @ fs @ swap @ all zero ?
-
-
-  // if SPT says user process should not be here or kvaddr // or write
-  //read only page then terminate
-
-  //obtain a frame to store the page
-  // fetch data into the frame
-  // point pte for faulting address to physical page
-
-  // caused by kernel @ kill process
-
-  //invalid vaddr @ nullptr  @ KVADDR @ below stack @0x08048000 @ does not appear to be stack access ..not within 32 bytes
+  // This code is good * uncomment @ next cp
+  // struct thread *t = thread_current();
+  // uint8_t *sp = t->stack;
+  // struct sPageTableEntry *sPTE = page_lookup(pg_round_down(fault_addr), t->pagedir);
+  //
+  // //Valid Stack Access
+  // if (!sPTE && sp - 32 <= fault_addr <= sp + 4) {
+  //   setUpStackFrame(fault_addr);
+  //   return; // ?
+  // } else if (sPTE) {
+  //   setUpFrame(fault_addr, true);
+  //   return; // ?
+  // }
 
 
   /* To implement virtual memory, delete the rest of the function
