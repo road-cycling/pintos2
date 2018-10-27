@@ -31,7 +31,7 @@ struct frame_table_entry *vm_find_in_list(uint32_t *vpage_base);
 uint32_t *getFrameToInstall(enum palloc_flags, bool);
 void install_frame(uint32_t*, struct sPageTableEntry *);
 void evict_frame(void);
-// void setUpFrame(uint32_t*, bool);
+void setUpFrame(uint32_t*, bool);
 
 
 #endif /* vm/frame.h */

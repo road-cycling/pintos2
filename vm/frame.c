@@ -58,6 +58,7 @@ void install_frame(uint32_t* kv_addr, struct sPageTableEntry *entry) {
                   ? getSupPTE(kv_addr)
                   : entry;
 
+  //printf("install_frame before lock_acquire\n");
   lock_acquire(&frame_table_lock);
   list_push_back(&frame_table, &fte->elem);
   lock_release(&frame_table_lock);
@@ -144,27 +145,27 @@ void vm_write_to_frame(uint32_t *write_to, struct sPageTableEntry *spte) {
 
 }
 
+//This function needs to be rewritten
+void setUpFrame(uint32_t *fault_addr, bool eviction) {
 
-// void setUpFrame(uint32_t *fault_addr, bool eviction) {
-//
-//   struct thread *t = thread_current();
-//   uint32_t *fault_addr_rd = pg_round_down(fault_addr);
-//
-//   struct sPageTableEntry *sPTE = page_lookup(fault_addr_rd, &t->s_pte);
-//
-//   if (sPTE == NULL)
-//     PANIC ("Couldn't find sPTE for vaddr.\n");
-//
-//   uint32_t *kpage = getFrameToInstall(PAL_USER, true);
-//
-//   if (!install_page(fault_addr_rd, kpage, true))
-//     PANIC("Couldn't install page.\n");
-//
-//   vm_write_to_page(kpage, sPTE);
-//
-//   install_frame(fault_addr_rd, sPTE);
-//
-// }
+  struct thread *t = thread_current();
+  uint32_t *fault_addr_rd = pg_round_down(fault_addr);
+
+  struct sPageTableEntry *sPTE = page_lookup(fault_addr_rd, &t->s_pte);
+
+  if (sPTE == NULL)
+    PANIC ("Couldn't find sPTE for vaddr.\n");
+
+  uint32_t *kpage = getFrameToInstall(PAL_USER, true);
+
+  if (!install_page(fault_addr_rd, kpage, true))
+    PANIC("Couldn't install page.\n");
+
+  vm_write_to_frame(kpage, sPTE);
+
+  install_frame(fault_addr_rd, sPTE);
+
+}
 
 struct frame_table_entry *vm_find_in_list(uint32_t *vpage_base) {
   struct list_elem *e;

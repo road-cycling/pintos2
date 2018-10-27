@@ -4,6 +4,9 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "vm/page.h"
+#include "vm/frame.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -145,28 +148,42 @@ static void page_fault (struct intr_frame *f) {
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-
+//  printf("In page fault\n PF_P: %d\n PF_W: %d\n PF_U: %d\n",not_present, write, user);
   if (fault_addr == NULL                        ||
       (user && fault_addr >= (int *)0xC0000000) ||
-      fault_addr <= 0x08048000                  ||
-      !not_present) {
+      fault_addr <= 0x08048000) {
+    //printf("exitingabove\n");
     printf("%s: exit(-1)\n", thread_current()->name);
     thread_exit ();
   }
 
-  // This code is good * uncomment @ next cp
-  // struct thread *t = thread_current();
-  // uint8_t *sp = t->stack;
-  // struct sPageTableEntry *sPTE = page_lookup(pg_round_down(fault_addr), t->pagedir);
-  //
-  // //Valid Stack Access
-  // if (!sPTE && sp - 32 <= fault_addr <= sp + 4) {
-  //   setUpStackFrame(fault_addr);
-  //   return; // ?
-  // } else if (sPTE) {
-  //   setUpFrame(fault_addr, true);
-  //   return; // ?
-  // }
+#ifdef VM
+  struct thread *t = thread_current();
+  struct sPageTableEntry *sPTE = page_lookup(pg_round_down(fault_addr), &t->s_pte);
+
+  //Valid Stack Access
+//   ../../userprog/exception.c: In function ‘page_fault’:
+// ../../userprog/exception.c:153: warning: comparison of distinct pointer types lacks a cast
+// ../../userprog/exception.c:154: warning: comparison between pointer and integer
+// ../../userprog/exception.c:164: warning: comparison between pointer and integer
+// ../../userprog/exception.c:164: warning: comparisons like ‘X<=Y<=Z’ do not have their mathematical meaning
+// ../../userprog/exception.c:168: warning: implicit declaration of function ‘setUpFrame’
+  if (!sPTE && ((f->esp - 32) <= fault_addr) /* && (fault_addr <= (f->esp + 4))*/) {
+    vm_install_stack(fault_addr);
+    return ;
+  } else if (sPTE) {
+    setUpFrame(fault_addr, true);
+    return ;
+  } else {
+    // printf("(f->esp - 32): %d <= fault_addr: %d\n", (f->esp - 32), fault_addr);
+    // printf("fault_addr: %d <= (f->esp + 4): %d\n", fault_addr, (f->esp + 4));
+
+    printf("%s: exit(-1)\n", thread_current()->name);
+    thread_exit ();
+  }
+
+#endif
+
 
 
   /* To implement virtual memory, delete the rest of the function
