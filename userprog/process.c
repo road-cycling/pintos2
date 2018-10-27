@@ -25,6 +25,7 @@
 
 #ifdef VM
 #include "vm/page.h"
+#include "vm/frame.h"
 #endif
 
 //static struct semaphore temporary;
@@ -37,16 +38,16 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t process_execute (char *file_name) {
 
-  //printf("process_Execute called....args %s\n", file_name);
-
   char *fn_copy;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  //sema_init(&temporary, 0);
-  //printf("No Page Fault 0\n");
+#ifdef VM
+  fn_copy = vm_get_frame(0);
+#else
   fn_copy = palloc_get_page (0);
+#endif
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
@@ -57,8 +58,14 @@ tid_t process_execute (char *file_name) {
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
+  if (tid == TID_ERROR) {
+#ifdef VM
+    vm_free_frame(fn_copy, true);
+#else
     palloc_free_page (fn_copy);
+#endif
+
+  }
 
   struct thread *createdThread = getThreadByID(tid);
   if (createdThread != NULL) {
@@ -92,7 +99,12 @@ static void start_process (void *file_name_) {
   success = load (file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
+#ifdef VM
+  vm_free_frame(file_name, false);
+#else
   palloc_free_page (file_name);
+#endif
+
   if (!success)
     thread_exit ();
 
@@ -120,16 +132,12 @@ process_wait (tid_t child_tid) {
 
   struct thread *createdThread = getThreadByID(child_tid);
   if (createdThread != NULL && createdThread->parentID == thread_tid()) {
-    //is a child
     createdThread->isWaitedOn = 1;
     sema_down(&createdThread->ifWait);
 
     int status = getReturnStatus(child_tid);
     return status;
-  }// else {
-  //   // not sure about this
-  //   sema_down(&temporary);
-  // }
+  }
   return -1;
 }
 
@@ -448,13 +456,16 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
+#ifdef VM
+      uint8_t *kpage = vm_get_frame(PAL_USER);
+#else
       uint8_t *kpage = palloc_get_page (PAL_USER);
+#endif
       if (kpage == NULL)
         return false;
 
       /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
+      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) {
           palloc_free_page (kpage);
           return false;
         }
@@ -462,7 +473,11 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes,
 
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) {
+#ifdef VM
+          vm_free_frame(kpage, true);
+#else
           palloc_free_page (kpage);
+#endif
           return false;
         }
 
@@ -480,14 +495,23 @@ static bool setup_stack (void **esp, char *args) {
   uint8_t *kpage;
   bool success = false;
 
+#ifdef VM
+  kpage = vm_get_frame (PAL_USER | PAL_ZERO);
+#else
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+#endif
   if (kpage != NULL) {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
         //*esp = PHYS_BASE - 12;
         *esp = PHYS_BASE;
-      else
+      else {
+#ifdef VM
+        vm_free_frame(kpage, true);
+#else
         palloc_free_page (kpage);
+#endif
+      }
     }
 
   if (success) {
