@@ -56,6 +56,10 @@ static void exit(uint32_t *args);
 static pid_t exec (uint32_t *args);
 static void halt(void);
 
+#ifdef VM
+static mapid_t (uint32_t *args);
+static void muunmap (mapid_t mapping);
+#endif
 
 /*
 Need to implement
@@ -358,6 +362,87 @@ static int filesize (uint32_t *args) {
 
   return fileSize;
 }
+
+/*
+
+Your VM system must lazily load pages in mmap regions and use the mmaped file itself
+as backing store for the mapping. That is, evicting a page mapped by mmap writes it
+back to the file it was mapped from.
+If the file’s length is not a multiple of PGSIZE, then some bytes in the final mapped
+page “stick out” beyond the end of the file. Set these bytes to zero when the page is
+faulted in from the file system, and discard them when the page is written back to
+disk.
+If successful, this function returns a “mapping ID” that uniquely identifies the mapping
+within the process. On failure, it must return -1, which otherwise should not be
+a valid mapping id, and the process’s mappings must be unchanged.
+A call to mmap may fail if the file open as fd has a length of zero bytes. It must fail
+if addr is not page-aligned or if the range of pages mapped overlaps any existing set
+of mapped pages, including the stack or pages mapped at executable load time. It
+must also fail if addr is 0, because some Pintos code assumes virtual page 0 is not
+mapped. Finally, file descriptors 0 and 1, representing console input and output, are
+not mappable.
+*/
+
+#ifdef VM
+
+static mapid_t (uint32_t *args) {
+  int fd = (int) args[1];
+  void *addr = (void *) args[2];
+  struct file *fp = NULL;
+
+  // @reopen file?
+  if (!isValidAddr(addr) || pg_ofs(addr) != 0 || fd == 0 || fd == 1) {
+    exit(NULL);
+    thread_exit();
+  }
+
+  lock_acquire(&fileSystemLock);
+  if ((fp = getFileFromFD(fd, thread_current())) != NULL) {
+    uint32_t size_file_bytes = file_length(file);
+
+    while (size_file_bytes > 0) {
+
+      size_t page_read_bytes = size_file_bytes < PGSIZE ? size_file_bytes : PGSIZE;
+      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+      uint8_t *kpage = vm_get_frame(PAL_USER);
+
+      if (file_read(file, kpage, page_read_bytes) != (int) page_read_bytes) {
+        vm_free_frame(kpage, true);
+        lock_release(&fileSystemLock);
+        return -1;
+      }
+
+      memset(kpage + page_read_bytes, 0, page_zero_bytes);
+
+      //install page
+      size_file_bytes -= page_read_bytes;
+      addr += PGSIZE;
+    }
+
+  }
+  lock_release(&fileSystemLock);
+
+  return -1;
+  //Take file associated with FD & map it into memory
+  // @loadsegment() -> process.c
+
+  //get length of file
+  //uint32_t length = file_length(file);
+
+  //file_reopen @ file
+
+  //for each page you allocate for this file to map
+  // you add a new fte & spte to go along with it
+
+
+}
+
+static void muunmap (mapid_t mapping) {
+
+}
+
+#endif
 
 //Helper Functions
 

@@ -19,6 +19,9 @@ struct sPageTableEntry {
   struct file *file;             /* FP */
   off_t fileoffset;              /* FP Offset */
   size_t diskOffset;             /* disk Offset */
+
+  //bool dirty;
+  //bool accessed;
 };
 
 unsigned page_hash (const struct hash_elem *, void * UNUSED);
