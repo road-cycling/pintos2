@@ -12,9 +12,19 @@
 #include "filesys/file.h"
 #include "userprog/process.h"
 
+#ifdef VM
+static int mmapID = 0;
+#endif
+
 struct lock fileSystemLock;
 static struct list FD;
 static struct list returnStatusStruct;
+
+#ifdef VM
+static struct list _mmapList;
+struct lock _mmapLock;
+#endif
+
 typedef int pid_t;
 
 struct returnStatus {
@@ -27,16 +37,43 @@ struct fileDescriptor {
   int fd;
   struct file *file;
   struct thread *t;
+  //struct mmap_file *mmap;
   struct list_elem globalFDList;
   struct list_elem threadFDList;
 };
 
+// struct perf_mmap {
+// 	void		 *base;
+// 	int		 mask;
+// 	int		 fd;
+// 	int		 cpu;
+// 	refcount_t	 refcnt;
+// 	u64		 prev;
+// 	u64		 start;
+// 	u64		 end;
+// 	bool		 overwrite;
+// 	struct auxtrace_mmap auxtrace_mmap;
+// 	char		 event_copy[PERF_SAMPLE_MAX_SIZE] __aligned(8);
+// };
+
+struct mmap_file {
+  void *base;
+  int fd;
+  int pages_taken;
+  mapid_t m_id;
+  struct thread *owner;
+  struct list_elem elem;
+};
 
 //helpers
 static struct file *getFileFromFD(int fd, struct thread *);
 //struct fileDescriptor *closeHelper(int fd, struct list *, bool, struct thread *);
 static struct fileDescriptor *closeHelperThread(int fd, struct list *lst, struct thread *t);
 static struct fileDescriptor *closeHelperGlobal(int fd, struct list *lst, struct thread *t);
+
+#ifdef VM
+struct mmap_file *_findMmapFile(mapid_t mid);
+#endif
 
 void setReturnStatus(tid_t threadID, int retStatus);
 int getReturnStatus(tid_t threadID);
@@ -58,7 +95,7 @@ static void halt(void);
 
 #ifdef VM
 static mapid_t (uint32_t *args);
-static void muunmap (mapid_t mapping);
+static void muunmap (uint32_t *args)
 #endif
 
 /*
@@ -69,6 +106,10 @@ void syscall_init (void) {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
   list_init(&FD);
   list_init(&returnStatusStruct);
+#ifdef VM
+  list_init(&_mmapList);
+  lock_init(&_mmapLock);
+#endif
   lock_init(&fileSystemLock);
 }
 
@@ -275,6 +316,7 @@ static int open(uint32_t *args) {
     fileDesc->t = t;
     fileDesc->fd = setFD;
     fileDesc->file = f;
+    //fileDesc->mmap = NULL;
 
     //implicitly protected
     list_push_back(&t->fdList, &fileDesc->threadFDList);
@@ -398,7 +440,15 @@ static mapid_t (uint32_t *args) {
 
   lock_acquire(&fileSystemLock);
   if ((fp = getFileFromFD(fd, thread_current())) != NULL) {
+
     uint32_t size_file_bytes = file_length(file);
+
+    struct mmap_file *_mmapFile = malloc(sizeof(mmap_file));
+    _mmapFile->base = addr;
+    _mmapFile->fd = fd;
+    _mmapFile->m_id = mmapID++; /* bad */
+    _mmapFile->owner = thread_current();
+    _mmapFile->pages_taken = DIV_ROUND_UP(size_file_bytes, PGSIZE);
 
     while (size_file_bytes > 0) {
 
@@ -408,6 +458,7 @@ static mapid_t (uint32_t *args) {
       uint8_t *kpage = vm_get_frame(PAL_USER);
 
       if (file_read(file, kpage, page_read_bytes) != (int) page_read_bytes) {
+        free(_mmapFile);
         vm_free_frame(kpage, true);
         lock_release(&fileSystemLock);
         return -1;
@@ -419,6 +470,15 @@ static mapid_t (uint32_t *args) {
       size_file_bytes -= page_read_bytes;
       addr += PGSIZE;
     }
+    //Finished writing to frames
+
+    // void list_push_back (struct list *, struct list_elem *);
+    lock_acquire(&_mmapLock);
+    list_push_back(&_mmapList, &_mmapFile->elem);
+    lock_release(&_mmapLock);
+
+    lock_release(&fileSystemLock);
+    return _mmapFile->m_id;
 
   }
   lock_release(&fileSystemLock);
@@ -438,13 +498,52 @@ static mapid_t (uint32_t *args) {
 
 }
 
-static void muunmap (mapid_t mapping) {
+static void muunmap (uint32_t *args) {
+  mapid_t mmap_id = (mapid_t) args[1];
+  int i = 0;
 
+  lock_acquire(&_mmapLock);
+  struct mmap_file *_mmapFile = _findMmapFile(mmap_id);
+  lock_release(&_mmapLock);
+
+  if (_mmapFile == NULL)
+    return;
+
+  for (; i < pages_taken; i++) {
+    vm_free_frame(base + PGSIZE * i, true);
+  }
+
+  lock_acquire(&_mmapLock);
+  list_remove(&_mmapFile->elem);
+  lock_release(&_mmapLock);
+
+  free(elem);
 }
 
 #endif
 
 //Helper Functions
+
+#ifdef VM
+
+struct mmap_file *_findMmapFile(mapid_t mid) {
+
+  ASSERT(lock_held_by_current_thread(&_mmapLock));
+
+  struct thread *t = thread_current();
+  struct list_elem *iter;
+
+  for (iter = list_begin(&_mmapList); iter != list_end(&_mmapList); iter = list_next(iter)) {
+    struct mmap_file *_mmapFile = list_entry(iter, struct mmap_file, elem);
+    if (_mmapFile->m_id == mid && _mmapFile->owner == t) {
+      return _mmapFile;
+    }
+  }
+
+  return NULL;
+}
+
+#endif
 
 void setReturnStatus(tid_t threadID, int retStatus) {
   struct returnStatus *rs = malloc(sizeof(struct returnStatus));
