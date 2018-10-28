@@ -263,6 +263,22 @@ struct frame_table_entry *_vm_malloc_fte(uint32_t *frame, struct sPageTableEntry
   return fte;
 }
 
+struct mmap_file *_vm_malloc_mmap(void *vaddr_base, int fd, int pages_taken, struct thread *t) {
+  struct mmap_file *mmap_f = malloc(sizeof(struct mmap_file));
+
+  if (mmap_f == NULL)
+    PANIC("NO MORE ARENAS COULD BE ALLOCATED @ MALLOC")
+
+  mmap_f->base = vaddr_base;
+  mmap_f->fd = fd;
+  mmap_f->pages_taken = pages_taken;
+  mmap_f->m_id = -1; // Need to write function in syscall.c with lock
+  mmap_f->owner = t;
+
+  return mmap_f;
+}
+
+
 uint32_t *_vm_get_frame(enum palloc_flags flags) {
   uint32_t *kpage = palloc_get_page(flags);
 
@@ -272,10 +288,46 @@ uint32_t *_vm_get_frame(enum palloc_flags flags) {
   return kpage;
 }
 
+bool vm_install_mmap(void *vaddr_base, struct file *file, int fd) {
 
+  //assert pgofs
 
+  struct file *mmap_file = file_reopen(file);
+  struct thread *t = thread_current();
+  uint32_t size_file_bytes = file_length(mmap_file);
 
+  int pages_taken = DIV_ROUND_UP(size_file_bytes, PGSIZE);
 
+  struct mmap_file *mmap_f = _vm_malloc_mmap(vaddr_base, fd, pages_taken, t);
+
+  int i = 0;
+  for (; i < pages_taken; i++) {
+    if (page_lookup(vaddr_base + i * PGSIZE, &t->s_pte) == NULL) {
+      free(mmap_f);
+      return false;
+    }
+  }
+
+  for (i = 0; i < pages_taken; i++) {
+    struct sPageTableEntry *spte = getCustomSupPTE(vaddr_base + i * PGSIZE, LOC_MMAP, mmap_file, i * PGSIZE, 0);
+    hash_insert(spte->hash_elem, &t->s_pte);
+  }
+
+  return true;
+
+}
+
+struct frame_table_entry *_vm_malloc_fte(uint32_t *frame, struct sPageTableEntry *spte) {
+  struct frame_table_entry *fte = malloc(sizeof(struct frame_table_entry));
+
+  if (fte == NULL)
+    PANIC("NO MORE ARENAS COULD BE ALLOCATED @ MALLOC")
+
+  fte->frame = frame;
+  fte->owner = thread_current();
+  fte->aux = spte;
+
+  return fte;
 
 
 
