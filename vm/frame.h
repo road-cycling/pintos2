@@ -39,6 +39,12 @@ void _vm_load_from_disk(uint32_t *, struct frame_table_entry *);
 struct frame_table_entry *_vm_malloc_fte(uint32_t *, struct sPageTableEntry *);
 uint32_t *_vm_get_frame(enum palloc_flags);
 
+void _vm_write_back_to_disk(struct frame_table_entry *);
+void _vm_write_back_to_file(struct frame_table_entry *);
+
+void _vm_evict_write_back(struct frame_table_entry *);
+
+void vm_grow_stack(uint32_t *);
 
 #endif /* vm/frame.h */
 

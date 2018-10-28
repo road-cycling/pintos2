@@ -18,8 +18,9 @@ struct fileDescriptor {
 
 #ifdef VM
 typedef int mapid_t;
-static int mmapID = 0;
+int mmapID = 0;
 static struct list _mmapList;
+struct lock mmap_id_lock;
 struct lock _mmapLock;
 
 struct mmap_file {
@@ -30,6 +31,8 @@ struct mmap_file {
   struct thread *owner;
   struct list_elem elem;
 };
+
+int get_mmap_id(void);
 
 #endif
 

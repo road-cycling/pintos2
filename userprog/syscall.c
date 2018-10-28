@@ -79,6 +79,7 @@ void syscall_init (void) {
 #ifdef VM
   list_init(&_mmapList);
   lock_init(&_mmapLock);
+  lock_init(&mmap_id_lock);
 #endif
   lock_init(&fileSystemLock);
 }
@@ -526,6 +527,13 @@ struct mmap_file *_findMmapFile(mapid_t mid) {
   }
 
   return NULL;
+}
+
+int get_mmap_id(void) {
+  lock_acquire(&mmap_id_lock);
+  int mmap_id = mmapID++;
+  lock_release(&mmap_id_lock);
+  return mmap_id;
 }
 
 #endif

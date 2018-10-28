@@ -216,6 +216,10 @@ void vm_load_install(uint32_t *fault_addr, struct sPageTableEntry *spte) {
   else
     PANIC("Couldn't locate contents of SPTE");
 
+  lock_acquire(&frame_table_lock);
+  list_push_back(&frame_table, &fte->elem);
+  lock_release(&frame_table_lock);
+
 }
 
 void _vm_load_from_disk(uint32_t *fault_base, struct frame_table_entry *fte) {
@@ -227,8 +231,8 @@ void _vm_load_from_disk(uint32_t *fault_base, struct frame_table_entry *fte) {
 
   read_from_block(fault_base, spte->disk_offset);
 
-  spte->location = LOC_FRME;
-  spte->disk_offset = -1;
+  // spte->location = LOC_FRME;
+  // spte->disk_offset = -1;
 }
 
 void _vm_load_from_file(uint32_t *fault_base, struct frame_table_entry *fte) {
@@ -246,8 +250,8 @@ void _vm_load_from_file(uint32_t *fault_base, struct frame_table_entry *fte) {
     memset(fault_base + bytes_transferred, 0, unwritten_bytes);
   }
 
-  spte->location = LOC_FRAME;
-  spte->file_offset = -1;
+  // spte->location = LOC_FRAME;
+  // spte->file_offset = -1;
 }
 
 struct frame_table_entry *_vm_malloc_fte(uint32_t *frame, struct sPageTableEntry *spte) {
@@ -272,7 +276,7 @@ struct mmap_file *_vm_malloc_mmap(void *vaddr_base, int fd, int pages_taken, str
   mmap_f->base = vaddr_base;
   mmap_f->fd = fd;
   mmap_f->pages_taken = pages_taken;
-  mmap_f->m_id = -1; // Need to write function in syscall.c with lock
+  mmap_f->m_id = get_mmap_id();
   mmap_f->owner = t;
 
   return mmap_f;
@@ -290,7 +294,7 @@ uint32_t *_vm_get_frame(enum palloc_flags flags) {
 
 bool vm_install_mmap(void *vaddr_base, struct file *file, int fd) {
 
-  //assert pgofs
+  ASSERT(pg_ofs(vaddr_base) == 0);
 
   struct file *mmap_file = file_reopen(file);
   struct thread *t = thread_current();
@@ -314,7 +318,6 @@ bool vm_install_mmap(void *vaddr_base, struct file *file, int fd) {
   }
 
   return true;
-
 }
 
 struct frame_table_entry *_vm_malloc_fte(uint32_t *frame, struct sPageTableEntry *spte) {
@@ -328,8 +331,79 @@ struct frame_table_entry *_vm_malloc_fte(uint32_t *frame, struct sPageTableEntry
   fte->aux = spte;
 
   return fte;
+}
 
 
+void _vm_evict_write_back(struct frame_table_entry *fte) {
+
+  ASSERT (fte != NULL && fte->aux != NULL);
+
+  if (fte->aux->location & LOC_SWAP)
+    _vm_write_back_to_disk(fte);
+  else if (fte->aux->location & LOC_MMAP)
+    _vm_write_back_to_file(fte);
+  else if (fte->aux->location & LOC_ZERO) //Zeroed page...
+    continue;
+  else
+    PANIC ("Couldn't locate where to write frame data.");
+}
+
+void _vm_write_back_to_disk(struct frame_table_entry *fte) {
+
+  ASSERT (fte != NULL & fte->aux != NULL);
+  ASSERT (fte->aux->loaction & LOC_SWAP);
+
+  size_t block_index = write_to_block(fte->frame);
+  fte->aux->location = LOC_SWAP;
+  fte->aux->disk_offset = block_index;
+}
+
+void _vm_write_back_to_file(struct frame_table_entry *fte) {
+
+  ASSERT (fte != NULL && fte->aux != NULL);
+  ASSERT(pg_ofs(fte->frame) == 0);
+  ASSERT(fte->aux->location & LOC_MMAP);
+  ASSERT(fte->aux->file != NULL);
+
+  struct file *file = file_reopen(fte->aux->file);
+
+  //Works now - since the file size doesn't grow...need to add file size to sPTE
+  /*off_t bytes_written = */file_write_at(file, fte->frame, PGSIZE, fte->aux->file_offset);
+  //check to make sure bytes_written = (to be added value) file segment size
+}
 
 
-// @on eviction mark not present
+//Implementing LRA (last recently added)
+// will add LRU / clock at the end
+void _vm_evict_frame() {
+
+  ASSERT(list_begin(&frame_table) != NULL);
+
+  lock_acquire(&frame_table_lock);
+  struct frame_table_entry *fte = list_entry(list_pop_front(&frame_table), struct frame_table_entry, elem);
+  lock_release(&frame_table_lock);
+
+  pagedir_clear_page(fte->owner->pagedir, fte->frame);
+  _vm_evict_write_back(fte);
+  palloc_free_page(fte->frame);
+  free(fte);
+}
+
+void vm_grow_stack(uint32_t *fault_addr) {
+  struct thread *t = thread_current();
+  uint32_t *fault_addr_rd = pg_round_down(fault_addr);
+
+  ASSERT(page_lookup(fault_addr_rd, &t->s_pte) == NULL);
+
+  uint32_t *frame = _vm_get_frame(PAL_USER | PAL_ZERO);
+  struct sPageTableEntry *spte = getCustomSupPTE(fault_addr_rd, LOC_FRME, NULL, 0, 0);
+  struct frame_table_entry *fte = _vm_malloc_fte(fault_addr_rd, spte);
+
+  if (!install_page(fault_addr_rd, frame, true))
+    PANIC("Couldn't install stack frame");
+
+  lock_acquire(&frame_table_lock);
+  list_push_back(&frame_table, &fte->elem);
+  lock_release(&frame_table_lock);
+
+}

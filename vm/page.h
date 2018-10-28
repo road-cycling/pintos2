@@ -4,10 +4,10 @@
 #include "filesys/off_t.h"
 #include <hash.h>
 
-#define LOC_ZERO 0x0
-#define LOC_SWAP 0x1
-#define LOC_MMAP 0x2
-#define LOC_FRME 0x4
+#define LOC_ZERO 0x00
+#define LOC_SWAP 0x01
+#define LOC_MMAP 0x02
+#define LOC_FRME 0x04
 
 #define setLocation(n, val) ((val) |= (1 << (n)))
 #define clrLocation(n, val) ((val) &= ~((1 << (n)))
@@ -17,8 +17,10 @@ struct sPageTableEntry {
   struct hash_elem hash_elem;    /* Hash Table Element */
   uint8_t location;              /* Struct not packed / size matters less */
   struct file *file;             /* FP */
-  off_t file_offset;              /* FP Offset */
-  size_t disk_offset;             /* disk Offset */
+  off_t file_offset;             /* FP Offset */
+  size_t disk_offset;            /* disk Offset */
+
+  bool dirty;
   // struct thread *t thread_current
   //bool dirty;
   //bool accessed;
