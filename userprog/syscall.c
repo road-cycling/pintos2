@@ -1,47 +1,31 @@
 #include <stdio.h>
+#include <string.h>
 #include <syscall-nr.h>
-#include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "threads/malloc.h"
 #include "userprog/pagedir.h"
+#include "userprog/process.h"
+#include "userprog/syscall.h"
 #include "devices/shutdown.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
-#include "userprog/process.h"
+
 
 #ifdef VM
-static int mmapID = 0;
+#include "lib/round.h"
+#include "vm/frame.h"
 #endif
+
+typedef int pid_t;
 
 struct lock fileSystemLock;
 static struct list FD;
 static struct list returnStatusStruct;
 
-#ifdef VM
-static struct list _mmapList;
-struct lock _mmapLock;
-#endif
-
-typedef int pid_t;
-
-struct returnStatus {
-  tid_t threadID;
-  int retStatus;
-  struct list_elem ret;
-};
-
-struct fileDescriptor {
-  int fd;
-  struct file *file;
-  struct thread *t;
-  //struct mmap_file *mmap;
-  struct list_elem globalFDList;
-  struct list_elem threadFDList;
-};
-
+// Linux Kernel Implementation
 // struct perf_mmap {
 // 	void		 *base;
 // 	int		 mask;
@@ -56,29 +40,15 @@ struct fileDescriptor {
 // 	char		 event_copy[PERF_SAMPLE_MAX_SIZE] __aligned(8);
 // };
 
-struct mmap_file {
-  void *base;
-  int fd;
-  int pages_taken;
-  mapid_t m_id;
-  struct thread *owner;
-  struct list_elem elem;
-};
-
-//helpers
-static struct file *getFileFromFD(int fd, struct thread *);
-//struct fileDescriptor *closeHelper(int fd, struct list *, bool, struct thread *);
-static struct fileDescriptor *closeHelperThread(int fd, struct list *lst, struct thread *t);
-static struct fileDescriptor *closeHelperGlobal(int fd, struct list *lst, struct thread *t);
-
 #ifdef VM
 struct mmap_file *_findMmapFile(mapid_t mid);
 #endif
 
-void setReturnStatus(tid_t threadID, int retStatus);
-int getReturnStatus(tid_t threadID);
-static bool isValidAddr(uint32_t *);
 static void syscall_handler (struct intr_frame *);
+
+
+
+static bool isValidAddr(uint32_t *);
 static bool create(uint32_t *args);
 static int write(uint32_t *args);
 static int open(uint32_t *args);
@@ -94,8 +64,8 @@ static pid_t exec (uint32_t *args);
 static void halt(void);
 
 #ifdef VM
-static mapid_t (uint32_t *args);
-static void muunmap (uint32_t *args)
+static mapid_t mmap(uint32_t *args);
+static void muunmap (uint32_t *args);
 #endif
 
 /*
@@ -153,6 +123,10 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
     f->eax = tell(args);
   } else if (*args == SYS_CLOSE) {
     close(args);
+  } else if (*args == SYS_MMAP) {
+    f->eax = mmap(args);
+  } else if (*args == SYS_MUNMAP) {
+    muunmap(args);
   }
 }
 
@@ -427,7 +401,7 @@ not mappable.
 
 #ifdef VM
 
-static mapid_t (uint32_t *args) {
+static mapid_t mmap(uint32_t *args) {
   int fd = (int) args[1];
   void *addr = (void *) args[2];
   struct file *fp = NULL;
@@ -440,10 +414,10 @@ static mapid_t (uint32_t *args) {
 
   lock_acquire(&fileSystemLock);
   if ((fp = getFileFromFD(fd, thread_current())) != NULL) {
+    fp = file_reopen(fp);
+    uint32_t size_file_bytes = file_length(fp);
 
-    uint32_t size_file_bytes = file_length(file);
-
-    struct mmap_file *_mmapFile = malloc(sizeof(mmap_file));
+    struct mmap_file *_mmapFile = malloc(sizeof(struct mmap_file));
     _mmapFile->base = addr;
     _mmapFile->fd = fd;
     _mmapFile->m_id = mmapID++; /* bad */
@@ -457,7 +431,8 @@ static mapid_t (uint32_t *args) {
 
       uint8_t *kpage = vm_get_frame(PAL_USER);
 
-      if (file_read(file, kpage, page_read_bytes) != (int) page_read_bytes) {
+      if (file_read(fp, kpage, page_read_bytes) != (int) page_read_bytes) {
+        // TODO: add logic to free previous frames if alloc.
         free(_mmapFile);
         vm_free_frame(kpage, true);
         lock_release(&fileSystemLock);
@@ -466,9 +441,10 @@ static mapid_t (uint32_t *args) {
 
       memset(kpage + page_read_bytes, 0, page_zero_bytes);
 
-      //install page
+      // TODO: Install Page to PD / PT
       size_file_bytes -= page_read_bytes;
       addr += PGSIZE;
+      file_seek(fp, (off_t) page_read_bytes);
     }
     //Finished writing to frames
 
@@ -484,18 +460,6 @@ static mapid_t (uint32_t *args) {
   lock_release(&fileSystemLock);
 
   return -1;
-  //Take file associated with FD & map it into memory
-  // @loadsegment() -> process.c
-
-  //get length of file
-  //uint32_t length = file_length(file);
-
-  //file_reopen @ file
-
-  //for each page you allocate for this file to map
-  // you add a new fte & spte to go along with it
-
-
 }
 
 static void muunmap (uint32_t *args) {
@@ -509,15 +473,15 @@ static void muunmap (uint32_t *args) {
   if (_mmapFile == NULL)
     return;
 
-  for (; i < pages_taken; i++) {
-    vm_free_frame(base + PGSIZE * i, true);
+  for (; i < _mmapFile->pages_taken; i++) {
+    vm_free_frame(_mmapFile->base + PGSIZE * i, true);
   }
 
   lock_acquire(&_mmapLock);
   list_remove(&_mmapFile->elem);
   lock_release(&_mmapLock);
 
-  free(elem);
+  free(_mmapFile);
 }
 
 #endif
@@ -592,7 +556,7 @@ static bool isValidAddr(uint32_t *vaddr) {
   return vaddr != NULL && is_user_vaddr(vaddr) && pagedir_get_page(cur->pagedir,(void *) vaddr);
 }
 
-static struct file *getFileFromFD(int fd, struct thread *t) {
+struct file *getFileFromFD(int fd, struct thread *t) {
   //assume lock as been acquired
   struct list_elem *iter;
   for (iter = list_begin(&t->fdList); iter != list_end(&t->fdList); iter = list_next(iter)) {
@@ -610,7 +574,7 @@ static struct file *getFileFromFD(int fd, struct thread *t) {
 ../../userprog/syscall.c:211: error: for each function it appears in.)
 ../../userprog/syscall.c:211: error: ‘threadFDList’ undeclared (first use in this function)
 */
-static struct fileDescriptor *closeHelperGlobal(int fd, struct list *lst, struct thread *t) {
+struct fileDescriptor *closeHelperGlobal(int fd, struct list *lst, struct thread *t) {
   // assume lock has been acquired
   struct list_elem *iter;
   for (iter = list_begin(lst); iter != list_end(lst); iter = list_next(iter)) {
@@ -623,7 +587,7 @@ static struct fileDescriptor *closeHelperGlobal(int fd, struct list *lst, struct
   return NULL;
 }
 
-static struct fileDescriptor *closeHelperThread(int fd, struct list *lst, struct thread *t) {
+struct fileDescriptor *closeHelperThread(int fd, struct list *lst, struct thread *t) {
   //assume lock has been acquired
   struct list_elem *iter;
   for (iter = list_begin(lst); iter != list_end(lst); iter = list_next(iter)) {
