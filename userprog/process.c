@@ -149,7 +149,7 @@ void process_exit (void) {
   if (cur->isWaitedOn == 1) {
     sema_up(&cur->ifWait);
   }
-
+  // TODO: unmap mmapped pages
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

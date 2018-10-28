@@ -33,6 +33,12 @@ void install_frame(uint32_t*, struct sPageTableEntry *);
 void evict_frame(void);
 void setUpFrame(uint32_t*, bool);
 
+void vm_load_install(uint32_t *, struct sPageTableEntry *);
+void _vm_load_from_file(uint32_t *, struct frame_table_entry *);
+void _vm_load_from_disk(uint32_t *, struct frame_table_entry *);
+struct frame_table_entry *_vm_malloc_fte(uint32_t *, struct sPageTableEntry *);
+uint32_t *_vm_get_frame(enum palloc_flags);
+
 
 #endif /* vm/frame.h */
 

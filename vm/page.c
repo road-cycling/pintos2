@@ -5,14 +5,21 @@
 // on PF look up faulting addr / pull it in
 // Rss management on PEXIT ;;
 
-struct sPageTableEntry *getSupPTE (uint32_t *user_vaddr) {
+struct sPageTableEntry *getCustomSupPTE(uint32_t *user_vaddr, uint8_t location,
+                                        struct file *file, off_t file_offset,
+                                        size_t disk_offset) {
   struct sPageTableEntry *spte = malloc(sizeof (struct sPageTableEntry));
   spte->user_vaddr = pg_round_down(user_vaddr);
-  spte->location = 0;
-  spte->file = NULL;
-  spte->fileoffset = 0;
-  spte->diskOffset = 0;
+  spte->location = location;
+  spte->file = file;
+  spte->file_offset = file_offset;
+  spte->disk_offset = disk_offset;
   return spte;
+}
+
+
+struct sPageTableEntry *getSupPTE (uint32_t *user_vaddr) {
+  return getCustomSupPTE(user_vaddr, LOC_ZERO, NULL, (off_t)0, (size_t)0);
 }
 
 unsigned page_hash (const struct hash_elem *elem, void *aux UNUSED) {

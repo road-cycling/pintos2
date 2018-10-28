@@ -144,7 +144,7 @@ static pid_t exec (uint32_t *args) {
 
   return childID;
 
-} //pid_t exec(const char *file);
+}
 
 
 static bool remove(uint32_t *args) { //bool remove (const char *file);
@@ -415,37 +415,58 @@ static mapid_t mmap(uint32_t *args) {
   lock_acquire(&fileSystemLock);
   if ((fp = getFileFromFD(fd, thread_current())) != NULL) {
     fp = file_reopen(fp);
+
     uint32_t size_file_bytes = file_length(fp);
+    int pages_taken = DIV_ROUND_UP(size_file_bytes, PGSIZE);
+    struct thread *t = thread_current();
 
     struct mmap_file *_mmapFile = malloc(sizeof(struct mmap_file));
     _mmapFile->base = addr;
     _mmapFile->fd = fd;
     _mmapFile->m_id = mmapID++; /* bad */
     _mmapFile->owner = thread_current();
-    _mmapFile->pages_taken = DIV_ROUND_UP(size_file_bytes, PGSIZE);
+    _mmapFile->pages_taken = pages_taken;
 
-    while (size_file_bytes > 0) {
+    size_t file_ofs = 0;
 
-      size_t page_read_bytes = size_file_bytes < PGSIZE ? size_file_bytes : PGSIZE;
-      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+    int i = 0;
+    struct sPageTAbleEntry *spte = NULL;
+    for (; i < pages_taken; i++) {
+      spte = page_lookup(addr + PGSIZE * i, &t->s_pte);
 
-      uint8_t *kpage = vm_get_frame(PAL_USER);
-
-      if (file_read(fp, kpage, page_read_bytes) != (int) page_read_bytes) {
-        // TODO: add logic to free previous frames if alloc.
-        free(_mmapFile);
-        vm_free_frame(kpage, true);
+      if (spte != NULL) {
+        //release SPTE entries created so far
         lock_release(&fileSystemLock);
-        return -1;
+        return -1
       }
 
-      memset(kpage + page_read_bytes, 0, page_zero_bytes);
+      spte = getCustomSupPTE(addr + PGSIZE * i, LOC_MMAP, fp, file_ofs, 0);
+      hash_insert(&spte->hash_elem, &t->s_pte);
 
-      // TODO: Install Page to PD / PT
-      size_file_bytes -= page_read_bytes;
-      addr += PGSIZE;
-      file_seek(fp, (off_t) page_read_bytes);
+      file_ofs += PGSIZE;
     }
+
+    // while (size_file_bytes > 0) {
+    //
+    //   size_t page_read_bytes = size_file_bytes < PGSIZE ? size_file_bytes : PGSIZE;
+    //   size_t page_zero_bytes = PGSIZE - page_read_bytes;
+    //
+    //   uint8_t *kpage = vm_get_frame(PAL_USER);
+    //
+    //   if (file_read_at(fp, kpage, page_read_bytes, file_ofs) != (int) page_read_bytes) {
+    //     // TODO: add logic to free previous frames if alloc.
+    //     free(_mmapFile);
+    //     vm_free_frame(kpage, true);
+    //     lock_release(&fileSystemLock);
+    //     return -1;
+    //   }
+    //
+    //   memset(kpage + page_read_bytes, 0, page_zero_bytes);
+    //
+    //   size_file_bytes -= page_read_bytes;
+    //   file_ofs += page_read_bytes;
+    //   addr += PGSIZE;
+    // }
     //Finished writing to frames
 
     // void list_push_back (struct list *, struct list_elem *);

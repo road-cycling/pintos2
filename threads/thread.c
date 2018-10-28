@@ -174,6 +174,8 @@ thread_create (const char *name, int priority,
   ASSERT (function != NULL);
 
   /* Allocate thread. */
+
+  // VM Get Frame
   t = palloc_get_page (PAL_ZERO);
   if (t == NULL)
     return TID_ERROR;
@@ -565,6 +567,7 @@ thread_schedule_tail (struct thread *prev)
   if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread)
     {
       ASSERT (prev != cur);
+      //MMap free page
       palloc_free_page (prev);
     }
 }
