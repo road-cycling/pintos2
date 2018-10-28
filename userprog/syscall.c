@@ -64,8 +64,8 @@ static pid_t exec (uint32_t *args);
 static void halt(void);
 
 #ifdef VM
-static mapid_t mmap(uint32_t *args);
-static void muunmap (uint32_t *args);
+// static mapid_t mmap(uint32_t *args);
+// static void muunmap (uint32_t *args);
 #endif
 
 /*
@@ -124,11 +124,11 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
     f->eax = tell(args);
   } else if (*args == SYS_CLOSE) {
     close(args);
-  } else if (*args == SYS_MMAP) {
-    f->eax = mmap(args);
-  } else if (*args == SYS_MUNMAP) {
-    muunmap(args);
-  }
+  } //else if (*args == SYS_MMAP) {
+  //   f->eax = mmap(args);
+  // } else if (*args == SYS_MUNMAP) {
+  //   muunmap(args);
+  // }
 }
 
 static pid_t exec (uint32_t *args) {
@@ -401,110 +401,110 @@ not mappable.
 */
 
 #ifdef VM
-
-static mapid_t mmap(uint32_t *args) {
-  int fd = (int) args[1];
-  void *addr = (void *) args[2];
-  struct file *fp = NULL;
-
-  // @reopen file?
-  if (!isValidAddr(addr) || pg_ofs(addr) != 0 || fd == 0 || fd == 1) {
-    exit(NULL);
-    thread_exit();
-  }
-
-  lock_acquire(&fileSystemLock);
-  if ((fp = getFileFromFD(fd, thread_current())) != NULL) {
-    fp = file_reopen(fp);
-
-    uint32_t size_file_bytes = file_length(fp);
-    int pages_taken = DIV_ROUND_UP(size_file_bytes, PGSIZE);
-    struct thread *t = thread_current();
-
-    struct mmap_file *_mmapFile = malloc(sizeof(struct mmap_file));
-    _mmapFile->base = addr;
-    _mmapFile->fd = fd;
-    _mmapFile->m_id = mmapID++; /* bad */
-    _mmapFile->owner = thread_current();
-    _mmapFile->pages_taken = pages_taken;
-
-    size_t file_ofs = 0;
-
-    int i = 0;
-    struct sPageTAbleEntry *spte = NULL;
-    for (; i < pages_taken; i++) {
-      spte = page_lookup(addr + PGSIZE * i, &t->s_pte);
-
-      if (spte != NULL) {
-        //release SPTE entries created so far
-        lock_release(&fileSystemLock);
-        return -1
-      }
-
-      spte = getCustomSupPTE(addr + PGSIZE * i, LOC_MMAP, fp, file_ofs, 0);
-      hash_insert(&spte->hash_elem, &t->s_pte);
-
-      file_ofs += PGSIZE;
-    }
-
-    // while (size_file_bytes > 0) {
-    //
-    //   size_t page_read_bytes = size_file_bytes < PGSIZE ? size_file_bytes : PGSIZE;
-    //   size_t page_zero_bytes = PGSIZE - page_read_bytes;
-    //
-    //   uint8_t *kpage = vm_get_frame(PAL_USER);
-    //
-    //   if (file_read_at(fp, kpage, page_read_bytes, file_ofs) != (int) page_read_bytes) {
-    //     // TODO: add logic to free previous frames if alloc.
-    //     free(_mmapFile);
-    //     vm_free_frame(kpage, true);
-    //     lock_release(&fileSystemLock);
-    //     return -1;
-    //   }
-    //
-    //   memset(kpage + page_read_bytes, 0, page_zero_bytes);
-    //
-    //   size_file_bytes -= page_read_bytes;
-    //   file_ofs += page_read_bytes;
-    //   addr += PGSIZE;
-    // }
-    //Finished writing to frames
-
-    // void list_push_back (struct list *, struct list_elem *);
-    lock_acquire(&_mmapLock);
-    list_push_back(&_mmapList, &_mmapFile->elem);
-    lock_release(&_mmapLock);
-
-    lock_release(&fileSystemLock);
-    return _mmapFile->m_id;
-
-  }
-  lock_release(&fileSystemLock);
-
-  return -1;
-}
-
-static void muunmap (uint32_t *args) {
-  mapid_t mmap_id = (mapid_t) args[1];
-  int i = 0;
-
-  lock_acquire(&_mmapLock);
-  struct mmap_file *_mmapFile = _findMmapFile(mmap_id);
-  lock_release(&_mmapLock);
-
-  if (_mmapFile == NULL)
-    return;
-
-  for (; i < _mmapFile->pages_taken; i++) {
-    vm_free_frame(_mmapFile->base + PGSIZE * i, true);
-  }
-
-  lock_acquire(&_mmapLock);
-  list_remove(&_mmapFile->elem);
-  lock_release(&_mmapLock);
-
-  free(_mmapFile);
-}
+//
+// static mapid_t mmap(uint32_t *args) {
+//   int fd = (int) args[1];
+//   void *addr = (void *) args[2];
+//   struct file *fp = NULL;
+//
+//   // @reopen file?
+//   if (!isValidAddr(addr) || pg_ofs(addr) != 0 || fd == 0 || fd == 1) {
+//     exit(NULL);
+//     thread_exit();
+//   }
+//
+//   lock_acquire(&fileSystemLock);
+//   if ((fp = getFileFromFD(fd, thread_current())) != NULL) {
+//     fp = file_reopen(fp);
+//
+//     uint32_t size_file_bytes = file_length(fp);
+//     int pages_taken = DIV_ROUND_UP(size_file_bytes, PGSIZE);
+//     struct thread *t = thread_current();
+//
+//     struct mmap_file *_mmapFile = malloc(sizeof(struct mmap_file));
+//     _mmapFile->base = addr;
+//     _mmapFile->fd = fd;
+//     _mmapFile->m_id = mmapID++; /* bad */
+//     _mmapFile->owner = thread_current();
+//     _mmapFile->pages_taken = pages_taken;
+//
+//     size_t file_ofs = 0;
+//
+//     int i = 0;
+//     struct sPageTAbleEntry *spte = NULL;
+//     for (; i < pages_taken; i++) {
+//       spte = page_lookup(addr + PGSIZE * i, &t->s_pte);
+//
+//       if (spte != NULL) {
+//         //release SPTE entries created so far
+//         lock_release(&fileSystemLock);
+//         return -1
+//       }
+//
+//       spte = getCustomSupPTE(addr + PGSIZE * i, LOC_MMAP, fp, file_ofs, 0);
+//       hash_insert(&spte->hash_elem, &t->s_pte);
+//
+//       file_ofs += PGSIZE;
+//     }
+//
+//     // while (size_file_bytes > 0) {
+//     //
+//     //   size_t page_read_bytes = size_file_bytes < PGSIZE ? size_file_bytes : PGSIZE;
+//     //   size_t page_zero_bytes = PGSIZE - page_read_bytes;
+//     //
+//     //   uint8_t *kpage = vm_get_frame(PAL_USER);
+//     //
+//     //   if (file_read_at(fp, kpage, page_read_bytes, file_ofs) != (int) page_read_bytes) {
+//     //     // TODO: add logic to free previous frames if alloc.
+//     //     free(_mmapFile);
+//     //     vm_free_frame(kpage, true);
+//     //     lock_release(&fileSystemLock);
+//     //     return -1;
+//     //   }
+//     //
+//     //   memset(kpage + page_read_bytes, 0, page_zero_bytes);
+//     //
+//     //   size_file_bytes -= page_read_bytes;
+//     //   file_ofs += page_read_bytes;
+//     //   addr += PGSIZE;
+//     // }
+//     //Finished writing to frames
+//
+//     // void list_push_back (struct list *, struct list_elem *);
+//     lock_acquire(&_mmapLock);
+//     list_push_back(&_mmapList, &_mmapFile->elem);
+//     lock_release(&_mmapLock);
+//
+//     lock_release(&fileSystemLock);
+//     return _mmapFile->m_id;
+//
+//   }
+//   lock_release(&fileSystemLock);
+//
+//   return -1;
+// }
+//
+// static void muunmap (uint32_t *args) {
+//   mapid_t mmap_id = (mapid_t) args[1];
+//   int i = 0;
+//
+//   lock_acquire(&_mmapLock);
+//   struct mmap_file *_mmapFile = _findMmapFile(mmap_id);
+//   lock_release(&_mmapLock);
+//
+//   if (_mmapFile == NULL)
+//     return;
+//
+//   for (; i < _mmapFile->pages_taken; i++) {
+//     vm_free_frame(_mmapFile->base + PGSIZE * i, true);
+//   }
+//
+//   lock_acquire(&_mmapLock);
+//   list_remove(&_mmapFile->elem);
+//   lock_release(&_mmapLock);
+//
+//   free(_mmapFile);
+// }
 
 #endif
 

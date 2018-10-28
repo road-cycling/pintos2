@@ -2,6 +2,8 @@
 #define VM_FRAME_H
 
 #include "threads/palloc.h"
+#include "userprog/syscall.h"
+
 
 struct frame_table_entry {
   uint32_t *frame;
@@ -16,35 +18,24 @@ struct frame_table_entry {
 */
 
 void frame_init(void);
-
-void *vm_get_frame(enum palloc_flags);
-bool vm_free_frame(void *, bool);
-
-
-void vm_install_stack(uint32_t *);
-
-void vm_write_back(struct frame_table_entry *);
-void vm_write_to_frame(uint32_t *, struct sPageTableEntry *);
-
+bool vm_free_frame(void *);
+void* vm_get_no_pf_frame(enum palloc_flags);
+void vm_grow_stack (uint32_t *);
 struct frame_table_entry *vm_find_in_list(uint32_t *vpage_base);
+void vm_load_install (uint32_t *, struct sPageTableEntry *);
+bool vm_install_mmap(void *, struct file *, int);
 
-uint32_t *getFrameToInstall(enum palloc_flags, bool);
-void install_frame(uint32_t*, struct sPageTableEntry *);
-void evict_frame(void);
-void setUpFrame(uint32_t*, bool);
+void _vm_load_from_file (uint32_t *, struct frame_table_entry *);
+void _vm_load_from_disk (uint32_t *, struct frame_table_entry *);
+uint32_t *_vm_get_frame (enum palloc_flags);
 
-void vm_load_install(uint32_t *, struct sPageTableEntry *);
-void _vm_load_from_file(uint32_t *, struct frame_table_entry *);
-void _vm_load_from_disk(uint32_t *, struct frame_table_entry *);
-struct frame_table_entry *_vm_malloc_fte(uint32_t *, struct sPageTableEntry *);
-uint32_t *_vm_get_frame(enum palloc_flags);
+void _vm_evict_frame(struct frame_table_entry *);
+void _vm_write_back_to_disk (struct frame_table_entry *);
+void _vm_write_back_to_file (struct frame_table_entry *);
+void _vm_evict_write_back (struct frame_table_entry *);
 
-void _vm_write_back_to_disk(struct frame_table_entry *);
-void _vm_write_back_to_file(struct frame_table_entry *);
-
-void _vm_evict_write_back(struct frame_table_entry *);
-
-void vm_grow_stack(uint32_t *);
+struct frame_table_entry *_vm_malloc_fte (uint32_t *, struct sPageTableEntry *);
+struct mmap_file *_vm_malloc_mmap(void *, int, int, struct thread *);
 
 #endif /* vm/frame.h */
 

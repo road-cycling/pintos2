@@ -159,7 +159,7 @@ static void page_fault (struct intr_frame *f) {
 
 #ifdef VM
   struct thread *t = thread_current();
-  struct sPageTableEntry *sPTE = page_lookup(pg_round_down(fault_addr), &t->s_pte);
+  struct sPageTableEntry *spte = page_lookup(pg_round_down(fault_addr), &t->s_pte);
 
   //Valid Stack Access
 //   ../../userprog/exception.c: In function ‘page_fault’:
@@ -168,11 +168,11 @@ static void page_fault (struct intr_frame *f) {
 // ../../userprog/exception.c:164: warning: comparison between pointer and integer
 // ../../userprog/exception.c:164: warning: comparisons like ‘X<=Y<=Z’ do not have their mathematical meaning
 // ../../userprog/exception.c:168: warning: implicit declaration of function ‘setUpFrame’
-  if (!sPTE && ((f->esp - 32) <= fault_addr) /* && (fault_addr <= (f->esp + 4))*/) {
-    vm_install_stack(fault_addr);
+  if (!spte && ((f->esp - 32) <= fault_addr) /* && (fault_addr <= (f->esp + 4))*/) {
+    vm_grow_stack(fault_addr);
     return ;
-  } else if (sPTE) {
-    setUpFrame(fault_addr, true);
+  } else if (spte) {
+    vm_load_install(fault_addr, spte);
     return ;
   } else {
     // printf("(f->esp - 32): %d <= fault_addr: %d\n", (f->esp - 32), fault_addr);

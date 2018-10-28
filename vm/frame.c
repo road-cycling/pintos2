@@ -1,5 +1,7 @@
 #include <list.h>
 #include <stdio.h>
+#include <string.h>
+#include "lib/round.h"
 #include "vm/frame.h"
 #include "vm/page.h"
 #include "vm/swap.h"
@@ -9,6 +11,7 @@
 #include "threads/interrupt.h"
 #include "threads/malloc.h"
 #include "userprog/pagedir.h"
+#include "filesys/file.h"
 
 //CC vs _ inconsistent
 
@@ -22,13 +25,9 @@ void frame_init(void) {
   lock_init(&frame_table_lock);
 }
 
-void *vm_get_frame(enum palloc_flags flags) {
-  uint32_t *kpage = getFrameToInstall(flags, false);
-  install_frame(kpage, NULL);
-  return kpage;
-}
 
-bool vm_free_frame(void *vpage_base, bool deleteSPTE) {
+
+bool vm_free_frame(void *vpage_base) {
 
   ASSERT(pg_ofs(vpage_base) == 0);
 
@@ -36,136 +35,32 @@ bool vm_free_frame(void *vpage_base, bool deleteSPTE) {
   if (fte == NULL)
     return false;
 
-  if (deleteSPTE) {
-    // Remove from threads hashtable
-    //
-    printf("not implemented yet\n");
-  }
-
-  list_remove(&fte->elem);
-  free(fte);
+  _vm_evict_frame(fte);
   return true;
-
 }
 
-//palloc_get_page returns KVA
-void install_frame(uint32_t* kv_addr, struct sPageTableEntry *entry) {
-  struct frame_table_entry *fte = malloc(sizeof(struct frame_table_entry));
 
-  fte->frame = kv_addr;
-  fte->owner = thread_current();
-  fte->aux   = entry == NULL
-                  ? getSupPTE(kv_addr)
-                  : entry;
 
-  //printf("install_frame before lock_acquire\n");
+
+
+//Clone of vm_grow_stack
+void* vm_get_no_pf_frame(enum palloc_flags flags) {
+  // struct thread *t = thread_current();
+
+  uint32_t *frame = _vm_get_frame(flags);
+  struct sPageTableEntry *spte = getCustomSupPTE(frame, LOC_FRME, NULL, 0, 0);
+  struct frame_table_entry *fte = _vm_malloc_fte(frame, spte);
+
+  // if (!install_page(fault_addr_rd, frame, true))
+  //   PANIC("Couldn't install stack frame");
+
   lock_acquire(&frame_table_lock);
   list_push_back(&frame_table, &fte->elem);
   lock_release(&frame_table_lock);
+
+  return frame;
 }
 
-
-uint32_t *getFrameToInstall(enum palloc_flags flags, bool eviction) {
-  uint32_t *kpage = palloc_get_page(flags);
-
-  if (kpage == NULL && eviction) {
-    evict_frame();
-
-    kpage = palloc_get_page(flags);
-
-    if (kpage == NULL)
-      PANIC("No Free Frame Post Eviction\n");
-  }
-
-  return kpage;
-}
-
-void vm_write_back(struct frame_table_entry *fte) {
-
-  struct sPageTableEntry *spte = fte->aux;
-
-  if (spte->location & LOC_SWAP) {
-    size_t swapDiskOffset = write_to_block(fte->frame);
-    setLocation(LOC_SWAP, fte->aux->location);
-    fte->aux->disk_offset = swapDiskOffset;
-  } else if (spte->location & LOC_FILE) {
-    //only for mmap
-    printf("unreached (for now)\n");
-  }
-
-}
-
-
-void evict_frame() {
-
-  ASSERT(list_begin(&frame_table) != NULL);
-
-  //Cant disable interrupts, need some other way
-  enum intr_level old_level;
-  old_level = intr_disable ();
-
-  struct frame_table_entry *fte = list_entry(list_pop_front(&frame_table), \
-                                  struct frame_table_entry, elem);
-
-  pagedir_clear_page(fte->owner->pagedir, fte->frame);
-
-  vm_write_back(fte);
-
-  palloc_free_page(fte->aux->user_vaddr);
-  intr_set_level(old_level);
-
-  free(fte);
-}
-
-void vm_install_stack(uint32_t *fault_addr) {
-  struct thread *t = thread_current();
-  uint32_t *fault_addr_rd = pg_round_down(fault_addr);
-
-  ASSERT(page_lookup(fault_addr_rd, &t->s_pte) == NULL);
-
-  uint32_t *kpage = getFrameToInstall(PAL_USER | PAL_ZERO, true);
-
-  if (!install_page(fault_addr_rd, kpage, true))
-    PANIC("Couldn't install stack frame");
-
-  install_frame(fault_addr_rd, NULL);
-}
-
-void vm_write_to_frame(uint32_t *write_to, struct sPageTableEntry *spte) {
-
-  if (spte->location & LOC_SWAP) {
-    read_from_block(write_to, spte->disk_offset);
-  } else if (spte->location & LOC_FILE) {
-    //to be implemented with mmap
-    printf("not hit\n");
-  } else if (spte->location & LOC_ZERO) {
-    //memset(kpage, 0, 4096);
-    printf("not hit\n");
-  }
-
-}
-
-//This function needs to be rewritten
-void setUpFrame(uint32_t *fault_addr, bool eviction) {
-
-  struct thread *t = thread_current();
-  uint32_t *fault_addr_rd = pg_round_down(fault_addr);
-
-  struct sPageTableEntry *sPTE = page_lookup(fault_addr_rd, &t->s_pte);
-
-  if (sPTE == NULL)
-    PANIC ("Couldn't find sPTE for vaddr.\n");
-
-  uint32_t *kpage = getFrameToInstall(PAL_USER, true);
-
-  if (!install_page(fault_addr_rd, kpage, true))
-    PANIC("Couldn't install page.\n");
-
-  vm_write_to_frame(kpage, sPTE);
-
-  install_frame(fault_addr_rd, sPTE);
-
-}
 
 struct frame_table_entry *vm_find_in_list(uint32_t *vpage_base) {
   struct list_elem *e;
@@ -178,15 +73,7 @@ struct frame_table_entry *vm_find_in_list(uint32_t *vpage_base) {
   return NULL;
 }
 
-/* Adds a mapping from user virtual address UPAGE to kernel
-   virtual address KPAGE to the page table.
-   If WRITABLE is true, the user process may modify the page;
-   otherwise, it is read-only.
-   UPAGE must not already be mapped.
-   KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
-   Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. */
+
 static bool install_page (void *upage, void *kpage, bool writable) {
   struct thread *t = thread_current ();
 
@@ -220,6 +107,8 @@ void vm_load_install(uint32_t *fault_addr, struct sPageTableEntry *spte) {
   list_push_back(&frame_table, &fte->elem);
   lock_release(&frame_table_lock);
 
+  install_page(fault_addr, frame, true);
+
 }
 
 void _vm_load_from_disk(uint32_t *fault_base, struct frame_table_entry *fte) {
@@ -227,7 +116,7 @@ void _vm_load_from_disk(uint32_t *fault_base, struct frame_table_entry *fte) {
   struct sPageTableEntry *spte = fte->aux;
 
   ASSERT (fte != NULL && spte != NULL);
-  ASSERT (spte->disk_offset != -1);
+  //ASSERT (spte->disk_offset != -1);
 
   read_from_block(fault_base, spte->disk_offset);
 
@@ -240,38 +129,23 @@ void _vm_load_from_file(uint32_t *fault_base, struct frame_table_entry *fte) {
   struct sPageTableEntry *spte = fte->aux;
 
   ASSERT (fte != NULL && spte != NULL);
-  ASSERT (spte->file != NULL && spte->file_offset != -1);
+  ASSERT (spte->file != NULL /*&& spte->file_offset != -1*/);
 
-  off_t bytes_transferred = file_read_at(fte->aux, fault_base, PGSIZE, spte->file_offset);
+  off_t bytes_transferred = file_read_at(spte->file, fault_base, PGSIZE, spte->file_offset);
 
   //EOF -> vm_load_install uses flag PAL_ZERO (just in case)
   if (bytes_transferred != PGSIZE) {
     off_t unwritten_bytes = bytes_transferred - PGSIZE;
-    memset(fault_base + bytes_transferred, 0, unwritten_bytes);
+    memset(fault_base + bytes_transferred, 0, (size_t) unwritten_bytes);
   }
-
-  // spte->location = LOC_FRAME;
-  // spte->file_offset = -1;
 }
 
-struct frame_table_entry *_vm_malloc_fte(uint32_t *frame, struct sPageTableEntry *spte) {
-  struct frame_table_entry *fte = malloc(sizeof(struct frame_table_entry));
-
-  if (fte == NULL)
-    PANIC("NO MORE ARENAS COULD BE ALLOCATED @ MALLOC")
-
-  fte->frame = frame;
-  fte->owner = thread_current();
-  fte->aux = spte;
-
-  return fte;
-}
 
 struct mmap_file *_vm_malloc_mmap(void *vaddr_base, int fd, int pages_taken, struct thread *t) {
   struct mmap_file *mmap_f = malloc(sizeof(struct mmap_file));
 
   if (mmap_f == NULL)
-    PANIC("NO MORE ARENAS COULD BE ALLOCATED @ MALLOC")
+    PANIC("NO MORE ARENAS COULD BE ALLOCATED @ MALLOC");
 
   mmap_f->base = vaddr_base;
   mmap_f->fd = fd;
@@ -314,7 +188,7 @@ bool vm_install_mmap(void *vaddr_base, struct file *file, int fd) {
 
   for (i = 0; i < pages_taken; i++) {
     struct sPageTableEntry *spte = getCustomSupPTE(vaddr_base + i * PGSIZE, LOC_MMAP, mmap_file, i * PGSIZE, 0);
-    hash_insert(spte->hash_elem, &t->s_pte);
+    hash_insert(&t->s_pte, &spte->hash_elem);
   }
 
   return true;
@@ -324,7 +198,7 @@ struct frame_table_entry *_vm_malloc_fte(uint32_t *frame, struct sPageTableEntry
   struct frame_table_entry *fte = malloc(sizeof(struct frame_table_entry));
 
   if (fte == NULL)
-    PANIC("NO MORE ARENAS COULD BE ALLOCATED @ MALLOC")
+    PANIC("NO MORE ARENAS COULD BE ALLOCATED @ MALLOC");
 
   fte->frame = frame;
   fte->owner = thread_current();
@@ -343,15 +217,15 @@ void _vm_evict_write_back(struct frame_table_entry *fte) {
   else if (fte->aux->location & LOC_MMAP)
     _vm_write_back_to_file(fte);
   else if (fte->aux->location & LOC_ZERO) //Zeroed page...
-    continue;
+    printf("Zeroed page\n");
   else
     PANIC ("Couldn't locate where to write frame data.");
 }
 
 void _vm_write_back_to_disk(struct frame_table_entry *fte) {
 
-  ASSERT (fte != NULL & fte->aux != NULL);
-  ASSERT (fte->aux->loaction & LOC_SWAP);
+  ASSERT (fte != NULL && fte->aux != NULL);
+  ASSERT (fte->aux->location & LOC_SWAP);
 
   size_t block_index = write_to_block(fte->frame);
   fte->aux->location = LOC_SWAP;
@@ -375,13 +249,15 @@ void _vm_write_back_to_file(struct frame_table_entry *fte) {
 
 //Implementing LRA (last recently added)
 // will add LRU / clock at the end
-void _vm_evict_frame() {
+void _vm_evict_frame(struct frame_table_entry *fte) {
 
-  ASSERT(list_begin(&frame_table) != NULL);
+  if (fte == NULL) {
+    ASSERT(list_begin(&frame_table) != NULL);
 
-  lock_acquire(&frame_table_lock);
-  struct frame_table_entry *fte = list_entry(list_pop_front(&frame_table), struct frame_table_entry, elem);
-  lock_release(&frame_table_lock);
+    lock_acquire(&frame_table_lock);
+    fte = list_entry(list_pop_front(&frame_table), struct frame_table_entry, elem);
+    lock_release(&frame_table_lock);
+  }
 
   pagedir_clear_page(fte->owner->pagedir, fte->frame);
   _vm_evict_write_back(fte);

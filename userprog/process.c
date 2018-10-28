@@ -44,7 +44,7 @@ tid_t process_execute (char *file_name) {
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
 #ifdef VM
-  fn_copy = vm_get_frame(0);
+  fn_copy = vm_get_no_pf_frame(0);
 #else
   fn_copy = palloc_get_page (0);
 #endif
@@ -60,7 +60,7 @@ tid_t process_execute (char *file_name) {
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR) {
 #ifdef VM
-    vm_free_frame(fn_copy, true);
+    vm_free_frame(fn_copy);
 #else
     palloc_free_page (fn_copy);
 #endif
@@ -100,7 +100,7 @@ static void start_process (void *file_name_) {
 
   /* If load failed, quit. */
 #ifdef VM
-  vm_free_frame(file_name, false);
+  vm_free_frame(file_name);
 #else
   palloc_free_page (file_name);
 #endif
@@ -457,7 +457,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes,
 
       /* Get a page of memory. */
 #ifdef VM
-      uint8_t *kpage = vm_get_frame(PAL_USER);
+      uint8_t *kpage = vm_get_no_pf_frame(PAL_USER | PAL_ZERO);
 #else
       uint8_t *kpage = palloc_get_page (PAL_USER);
 #endif
@@ -466,18 +466,22 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes,
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) {
+        #ifdef VM
+          vm_free_frame(kpage);
+        #else
           palloc_free_page (kpage);
+        #endif
           return false;
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) {
-#ifdef VM
-          vm_free_frame(kpage, true);
-#else
+        #ifdef VM
+          vm_free_frame(kpage);
+        #else
           palloc_free_page (kpage);
-#endif
+        #endif
           return false;
         }
 
@@ -496,7 +500,7 @@ static bool setup_stack (void **esp, char *args) {
   bool success = false;
 
 #ifdef VM
-  kpage = vm_get_frame (PAL_USER | PAL_ZERO);
+  kpage = vm_get_no_pf_frame (PAL_USER | PAL_ZERO);
 #else
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
 #endif
@@ -507,7 +511,7 @@ static bool setup_stack (void **esp, char *args) {
         *esp = PHYS_BASE;
       else {
 #ifdef VM
-        vm_free_frame(kpage, true);
+        vm_free_frame(kpage);
 #else
         palloc_free_page (kpage);
 #endif
