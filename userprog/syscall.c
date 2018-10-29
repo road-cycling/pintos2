@@ -211,23 +211,6 @@ static void exit(uint32_t *args) {
 
   int returnStatus = args == NULL ? -1 : (int)*(args + 1);
 
-  // int returnStatus = args == NULL ? -1 :
-  //                       isValidAddr((void *) args[1]) ?
-  //                       (int) *(args + 1) :
-  //                       -1;
-  //int returnStatus = isValidAddr((void *) args[1]) ? (int) *(args + 1) : -1;
-  //int returnStatus = 0;
-
-  // if (isValidAddr((void *) args[1])) {
-  //   printf("Address is valid\n");
-  //   returnStatus = (int) *(args + 1);
-  // } else {
-  //   printf("Address is not valid");
-  //   returnStatus = -1;
-  // }
-
-
-
   if (cur->isWaitedOn == 1) {
     setReturnStatus(cur->tid, returnStatus);
   }

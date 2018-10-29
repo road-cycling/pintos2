@@ -37,17 +37,16 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t process_execute (char *file_name) {
-
   char *fn_copy;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-#ifdef VM
-  fn_copy = vm_get_no_pf_frame(0);
-#else
+//#ifdef VM
+  //fn_copy = vm_get_no_pf_frame(0);
+//#else
   fn_copy = palloc_get_page (0);
-#endif
+//#endif
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
@@ -59,11 +58,11 @@ tid_t process_execute (char *file_name) {
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR) {
-#ifdef VM
-    vm_free_frame(fn_copy);
-#else
+//#ifdef VM
+    //vm_free_frame(fn_copy);
+//#else
     palloc_free_page (fn_copy);
-#endif
+//#endif
 
   }
 
@@ -97,16 +96,14 @@ static void start_process (void *file_name_) {
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
-
   /* If load failed, quit. */
 
   if (!success) {
-
-    #ifdef VM
-      vm_free_frame(file_name);
-    #else
+    //#ifdef VM
+    //  vm_free_frame(file_name);
+    //#else
       palloc_free_page (file_name);
-    #endif
+    //#endif
     thread_exit ();
 
 
@@ -378,7 +375,7 @@ bool load (const char *file_name, void (**eip) (void), void **esp) {
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  //file_close (file);
   return success;
 }
 
@@ -445,11 +442,14 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
+
+
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
+  struct thread *t = thread_current();
 
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) {
@@ -459,41 +459,38 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-#ifdef VM
-      uint8_t *kpage = vm_get_no_pf_frame(PAL_USER | PAL_ZERO);
-#else
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-#endif
-      if (kpage == NULL)
+      if (page_lookup(upage, &t->s_pte) == NULL) {
+        struct sPageTableEntry *spte = getCustomSupPTE((uint32_t *)upage, page_zero_bytes == PGSIZE ? LOC_ZERO : LOC_MMAP, file, page_read_bytes + ofs, 0);
+        //printf("file length: %d\n", file_length(spte->file));
+        hash_insert(&t->s_pte, &spte->hash_elem);
+      } else {
         return false;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) {
-        #ifdef VM
-          vm_free_frame(kpage);
-        #else
-          palloc_free_page (kpage);
-        #endif
-          return false;
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+      }
+      //
+      // if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) {
+      //     palloc_free_page (kpage);
+      //     return false;
+      //   }
+      // memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
       /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) {
-        #ifdef VM
-          vm_free_frame(kpage);
-        #else
-          palloc_free_page (kpage);
-        #endif
-          return false;
-        }
+  //     if (!install_page (upage, kpage, writable)) {
+  // //      #ifdef VM
+  // //        vm_free_frame(kpage);
+  // //      #else
+  //         palloc_free_page (kpage);
+  // //      #endif
+  //         return false;
+  //       }
 
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
+      // printf("Page_read_bytes %d\n", read_bytes);
+      // printf("Zero_bytes %d\n", zero_bytes);
       upage += PGSIZE;
     }
+    //printf("returning\n");
   return true;
 }
 
@@ -503,24 +500,44 @@ static bool setup_stack (void **esp, char *args) {
   uint8_t *kpage;
   bool success = false;
 
+//#ifdef VM
+//  kpage = vm_get_no_pf_frame (PAL_USER | PAL_ZERO);
+//#else
+  //kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+//#endif
+//   if (kpage != NULL) {
+//       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+//       if (success)
+//         //*esp = PHYS_BASE - 12;
+//         *esp = PHYS_BASE;
+//       else {
+// //#ifdef VM
+// //        vm_free_frame(kpage);
+// //#else
+//         palloc_free_page (kpage);
+// //#endif
+//       }
+//     }
+
 #ifdef VM
-  kpage = vm_get_no_pf_frame (PAL_USER | PAL_ZERO);
+  kpage = vm_grow_stack_bandaid(((uint32_t *) PHYS_BASE) - PGSIZE);
+  if (kpage != NULL) {
+    success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+    if (success)
+      *esp = PHYS_BASE;
+    else
+      vm_free_frame(kpage);
+  }
 #else
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-#endif
   if (kpage != NULL) {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        //*esp = PHYS_BASE - 12;
-        *esp = PHYS_BASE;
-      else {
-#ifdef VM
-        vm_free_frame(kpage);
-#else
-        palloc_free_page (kpage);
+    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+    if (success)
+      *esp = PHYS_BASE;
+    else
+      palloc_free_page(kpage);
+  }
 #endif
-      }
-    }
 
   if (success) {
 
@@ -581,6 +598,7 @@ static bool setup_stack (void **esp, char *args) {
     }
     //hex_dump(*esp, *esp, PHYS_BASE - *esp, true);
   }
+
 
   return success;
 }

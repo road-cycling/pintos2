@@ -32,6 +32,8 @@ void _vm_write_back_to_disk (struct frame_table_entry *);
 void _vm_write_back_to_file (struct frame_table_entry *);
 void _vm_evict_write_back (struct frame_table_entry *);
 
+void* vm_grow_stack_bandaid(uint32_t *fault_addr);
+
 struct mmap_file *vm_install_mmap(void *, struct file *, int);
 bool vm_muunmap_helper(struct mmap_file *mmf);
 struct frame_table_entry *_vm_malloc_fte (uint32_t *, struct sPageTableEntry *);

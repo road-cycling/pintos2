@@ -161,13 +161,6 @@ static void page_fault (struct intr_frame *f) {
   struct thread *t = thread_current();
   struct sPageTableEntry *spte = page_lookup(pg_round_down(fault_addr), &t->s_pte);
 
-  //Valid Stack Access
-//   ../../userprog/exception.c: In function ‘page_fault’:
-// ../../userprog/exception.c:153: warning: comparison of distinct pointer types lacks a cast
-// ../../userprog/exception.c:154: warning: comparison between pointer and integer
-// ../../userprog/exception.c:164: warning: comparison between pointer and integer
-// ../../userprog/exception.c:164: warning: comparisons like ‘X<=Y<=Z’ do not have their mathematical meaning
-// ../../userprog/exception.c:168: warning: implicit declaration of function ‘setUpFrame’
   if (!spte && ((f->esp - 32) <= fault_addr) /* && (fault_addr <= (f->esp + 4))*/) {
     vm_grow_stack(fault_addr);
     return ;
