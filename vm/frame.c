@@ -15,6 +15,7 @@
 
 //CC vs _ inconsistent
 
+
 static struct list frame_table;
 static struct lock frame_table_lock;
 // add frame on call to palloc_get_page
@@ -24,7 +25,6 @@ void frame_init(void) {
   list_init(&frame_table);
   lock_init(&frame_table_lock);
 }
-
 
 
 bool vm_free_frame(void *vpage_base) {
@@ -40,19 +40,12 @@ bool vm_free_frame(void *vpage_base) {
 }
 
 
-
-
-
 //Clone of vm_grow_stack
 void* vm_get_no_pf_frame(enum palloc_flags flags) {
-  // struct thread *t = thread_current();
 
   uint32_t *frame = _vm_get_frame(flags);
   struct sPageTableEntry *spte = getCustomSupPTE(frame, LOC_FRME, NULL, 0, 0);
   struct frame_table_entry *fte = _vm_malloc_fte(frame, spte);
-
-  // if (!install_page(fault_addr_rd, frame, true))
-  //   PANIC("Couldn't install stack frame");
 
   lock_acquire(&frame_table_lock);
   list_push_back(&frame_table, &fte->elem);
@@ -82,13 +75,6 @@ static bool install_page (void *upage, void *kpage, bool writable) {
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
-
-
-/*
-
-New API
-
-*/
 
 void vm_load_install(uint32_t *fault_addr, struct sPageTableEntry *spte) {
 
@@ -166,7 +152,7 @@ uint32_t *_vm_get_frame(enum palloc_flags flags) {
   return kpage;
 }
 
-bool vm_install_mmap(void *vaddr_base, struct file *file, int fd) {
+struct mmap_file *vm_install_mmap(void *vaddr_base, struct file *file, int fd) {
 
   ASSERT(pg_ofs(vaddr_base) == 0);
 
@@ -182,7 +168,7 @@ bool vm_install_mmap(void *vaddr_base, struct file *file, int fd) {
   for (; i < pages_taken; i++) {
     if (page_lookup(vaddr_base + i * PGSIZE, &t->s_pte) == NULL) {
       free(mmap_f);
-      return false;
+      return NULL;
     }
   }
 
@@ -191,8 +177,21 @@ bool vm_install_mmap(void *vaddr_base, struct file *file, int fd) {
     hash_insert(&t->s_pte, &spte->hash_elem);
   }
 
-  return true;
+  return mmap_f;
 }
+
+// TODO: muunmap
+bool vm_muunmap_helper(struct mmap_file *mmf) {
+  ASSERT(mmf != NULL);
+
+  if (mmf == NULL)
+    printf("foo");
+  //
+  return true;
+
+}
+
+
 
 struct frame_table_entry *_vm_malloc_fte(uint32_t *frame, struct sPageTableEntry *spte) {
   struct frame_table_entry *fte = malloc(sizeof(struct frame_table_entry));
@@ -214,7 +213,7 @@ void _vm_evict_write_back(struct frame_table_entry *fte) {
 
   if (fte->aux->location & LOC_SWAP)
     _vm_write_back_to_disk(fte);
-  else if (fte->aux->location & LOC_MMAP)
+  else if (fte->aux->location & LOC_MMAP) //check dirty @@@
     _vm_write_back_to_file(fte);
   else if (fte->aux->location & LOC_ZERO) //Zeroed page...
     printf("Zeroed page\n");

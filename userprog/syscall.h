@@ -1,48 +1,27 @@
 #ifndef USERPROG_SYSCALL_H
 #define USERPROG_SYSCALL_H
 
-
-struct returnStatus {
-  tid_t threadID;
-  int retStatus;
-  struct list_elem ret;
-};
-
-struct fileDescriptor {
-  int fd;
-  struct file *file;
-  struct thread *t;
-  //struct mmap_file *mmap;
-  struct list_elem globalFDList;
-  struct list_elem threadFDList;
-};
+//sigh
+#include "threads/thread.h"
 
 #ifdef VM
+typedef int mapid_t;
 
-  typedef int mapid_t;
-  int mmapID = 0;
-  static struct list _mmapList;
-  struct lock mmap_id_lock;
-  struct lock _mmapLock;
-
-  struct mmap_file {
-    void *base;
-    int fd;
-    int pages_taken;
-    mapid_t m_id;
-    struct thread *owner;
-    struct list_elem elem;
-  };
-
-  int get_mmap_id(void);
-
+struct mmap_file {
+  void *base;
+  int fd;
+  int pages_taken;
+  mapid_t m_id;
+  struct thread *owner;
+  struct list_elem elem;
+};
 #endif
 
 void syscall_init (void);
 
-struct file *getFileFromFD(int , struct thread *);
-struct fileDescriptor *closeHelperThread(int , struct list *, struct thread *);
-struct fileDescriptor *closeHelperGlobal(int , struct list *, struct thread *);
+struct file *getFileFromFD(int, struct thread *);
+struct fileDescriptor *closeHelperThread(int, struct list *, struct thread *);
+struct fileDescriptor *closeHelperGlobal(int, struct list *, struct thread *);
 
 void setReturnStatus(tid_t, int);
 int getReturnStatus(tid_t);

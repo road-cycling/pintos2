@@ -5,6 +5,10 @@
 #include "userprog/syscall.h"
 
 
+/*
+../../vm/frame.h:15: warning: ‘enum palloc_page’ declared inside parameter list
+../../vm/frame.h:15: warning: its scope is only this definition or declaration, which is probably not what you want
+*/
 struct frame_table_entry {
   uint32_t *frame;
   struct thread *owner;
@@ -12,18 +16,12 @@ struct frame_table_entry {
   struct list_elem elem;
 };
 
-/*
-../../vm/frame.h:15: warning: ‘enum palloc_page’ declared inside parameter list
-../../vm/frame.h:15: warning: its scope is only this definition or declaration, which is probably not what you want
-*/
-
 void frame_init(void);
 bool vm_free_frame(void *);
 void* vm_get_no_pf_frame(enum palloc_flags);
 void vm_grow_stack (uint32_t *);
 struct frame_table_entry *vm_find_in_list(uint32_t *vpage_base);
 void vm_load_install (uint32_t *, struct sPageTableEntry *);
-bool vm_install_mmap(void *, struct file *, int);
 
 void _vm_load_from_file (uint32_t *, struct frame_table_entry *);
 void _vm_load_from_disk (uint32_t *, struct frame_table_entry *);
@@ -34,6 +32,8 @@ void _vm_write_back_to_disk (struct frame_table_entry *);
 void _vm_write_back_to_file (struct frame_table_entry *);
 void _vm_evict_write_back (struct frame_table_entry *);
 
+struct mmap_file *vm_install_mmap(void *, struct file *, int);
+bool vm_muunmap_helper(struct mmap_file *mmf);
 struct frame_table_entry *_vm_malloc_fte (uint32_t *, struct sPageTableEntry *);
 struct mmap_file *_vm_malloc_mmap(void *, int, int, struct thread *);
 

@@ -99,14 +99,18 @@ static void start_process (void *file_name_) {
   success = load (file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-#ifdef VM
-  vm_free_frame(file_name);
-#else
-  palloc_free_page (file_name);
-#endif
 
-  if (!success)
+  if (!success) {
+
+    #ifdef VM
+      vm_free_frame(file_name);
+    #else
+      palloc_free_page (file_name);
+    #endif
     thread_exit ();
+
+
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
