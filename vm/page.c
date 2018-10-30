@@ -7,12 +7,13 @@
 
 struct sPageTableEntry *getCustomSupPTE(uint32_t *user_vaddr, uint8_t location,
                                         struct file *file, off_t file_offset,
-                                        size_t disk_offset) {
+                                        off_t read_bytes, size_t disk_offset) {
   struct sPageTableEntry *spte = malloc(sizeof (struct sPageTableEntry));
   spte->user_vaddr = pg_round_down(user_vaddr);
   spte->location = location;
   spte->file = file;
   spte->file_offset = file_offset;
+  spte->read_bytes = read_bytes;
   spte->disk_offset = disk_offset;
   spte->dirty = false;
   return spte;
@@ -20,7 +21,7 @@ struct sPageTableEntry *getCustomSupPTE(uint32_t *user_vaddr, uint8_t location,
 
 
 struct sPageTableEntry *getSupPTE (uint32_t *user_vaddr) {
-  return getCustomSupPTE(user_vaddr, LOC_ZERO, NULL, (off_t)0, (size_t)0);
+  return getCustomSupPTE(user_vaddr, LOC_ZERO, NULL, (off_t)0, (off_t) 0,(size_t)0);
 }
 
 unsigned page_hash (const struct hash_elem *elem, void *aux UNUSED) {

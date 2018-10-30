@@ -303,8 +303,10 @@ partition_type_name (uint8_t type)
 static void
 partition_read (void *p_, block_sector_t sector, void *buffer)
 {
+  // printf("Partition read called\n");
   struct partition *p = p_;
   block_read (p->block, p->start + sector, buffer);
+  // printf("Partition read finished\n");
 }
 
 /* Write sector SECTOR to partition P from BUFFER, which must

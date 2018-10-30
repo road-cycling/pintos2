@@ -18,7 +18,7 @@
 
 static struct list frame_table;
 static struct lock frame_table_lock;
-// add frame on call to palloc_get_page
+
 static bool install_page (void *upage, void *kpage, bool writable);
 
 void frame_init(void) {
@@ -41,19 +41,20 @@ bool vm_free_frame(void *vpage_base) {
 
 
 //Clone of vm_grow_stack
-void* vm_get_no_pf_frame(enum palloc_flags flags) {
-
-  uint32_t *frame = _vm_get_frame(flags);
-  //Need to map vaddr address?
-  struct sPageTableEntry *spte = getCustomSupPTE(frame, LOC_FRME, NULL, 0, 0);
-  struct frame_table_entry *fte = _vm_malloc_fte(frame, spte);
-
-  lock_acquire(&frame_table_lock);
-  list_push_back(&frame_table, &fte->elem);
-  lock_release(&frame_table_lock);
-
-  return frame;
-}
+// dangerous func - dont call
+// void* vm_get_no_pf_frame(enum palloc_flags flags) {
+//
+//   uint32_t *frame = _vm_get_frame(flags);
+//   //Need to map vaddr address?
+//   struct sPageTableEntry *spte = getCustomSupPTE(frame, LOC_FRME, NULL, 0, 0);
+//   struct frame_table_entry *fte = _vm_malloc_fte(frame, spte);
+//
+//   lock_acquire(&frame_table_lock);
+//   list_push_back(&frame_table, &fte->elem);
+//   lock_release(&frame_table_lock);
+//
+//   return frame;
+// }
 
 
 struct frame_table_entry *vm_find_in_list(uint32_t *vpage_base) {
@@ -78,9 +79,10 @@ static bool install_page (void *upage, void *kpage, bool writable) {
 }
 
 void vm_load_install(uint32_t *fault_addr, struct sPageTableEntry *spte) {
+
   uint32_t *fault_base = pg_round_down(fault_addr);
   uint32_t *frame = _vm_get_frame(PAL_USER | PAL_ZERO);
-  struct frame_table_entry *fte = _vm_malloc_fte(fault_base, spte);
+  struct frame_table_entry *fte = _vm_malloc_fte(frame, spte);
 
   if (spte->location & LOC_SWAP)
     _vm_load_from_disk(fault_base, fte);
@@ -95,24 +97,21 @@ void vm_load_install(uint32_t *fault_addr, struct sPageTableEntry *spte) {
   list_push_back(&frame_table, &fte->elem);
   lock_release(&frame_table_lock);
 
-  install_page(fault_addr, frame, true);
+  install_page(fault_base, frame, true);
 
 }
 
-void _vm_load_from_disk(uint32_t *fault_base, struct frame_table_entry *fte) {
+void _vm_load_from_disk(uint32_t *fault_base UNUSED, struct frame_table_entry *fte) {
+
+  ASSERT (fte != NULL && fte->aux != NULL);
 
   struct sPageTableEntry *spte = fte->aux;
+  read_from_block(fte->frame, spte->disk_offset);
 
-  ASSERT (fte != NULL && spte != NULL);
-  //ASSERT (spte->disk_offset != -1);
-
-  read_from_block(fault_base, spte->disk_offset);
-
-  // spte->location = LOC_FRME;
-  // spte->disk_offset = -1;
 }
 
-void _vm_load_from_file(uint32_t *fault_base, struct frame_table_entry *fte) {
+void _vm_load_from_file(uint32_t *fault_base UNUSED, struct frame_table_entry *fte) {
+
 
   struct sPageTableEntry *spte = fte->aux;
 
@@ -120,18 +119,13 @@ void _vm_load_from_file(uint32_t *fault_base, struct frame_table_entry *fte) {
   ASSERT (spte->file != NULL /*&& spte->file_offset != -1*/);
 
   struct file *file = file_reopen(spte->file);
-  //printf("Function finished....bytes_transferred is %d\n", bytes_transferred);
 
-  off_t bytes_transferred = file_read_at(spte->file, fault_base, PGSIZE, spte->file_offset);
-  printf("Transferred bytes from file\n");
-  printf("Bytes_transferred: %d\n", bytes_transferred);
+  off_t bytes_transferred = file_read_at(file, fte->frame, spte->read_bytes, spte->file_offset);
   //EOF -> vm_load_install uses flag PAL_ZERO (just in case)
-
-
-  // if (bytes_transferred != PGSIZE) {
-  //   off_t unwritten_bytes = bytes_transferred - PGSIZE;
-  //   memset(fault_base + bytes_transferred, 0, (size_t) unwritten_bytes);
-  // }
+  if (bytes_transferred != PGSIZE) {
+    off_t unwritten_bytes = PGSIZE - bytes_transferred; //lol
+    memset(fte->frame + bytes_transferred, 0, (size_t) unwritten_bytes);
+  }
 
 }
 
@@ -186,8 +180,9 @@ struct mmap_file *vm_install_mmap(void *vaddr_base, struct file *file, int fd) {
     }
   }
 
+  // TODO: Fix
   for (i = 0; i < pages_taken; i++) {
-    struct sPageTableEntry *spte = getCustomSupPTE(vaddr_base + i * PGSIZE, LOC_MMAP, mmap_file, i * PGSIZE, 0);
+    struct sPageTableEntry *spte = getCustomSupPTE(vaddr_base + i * PGSIZE, LOC_MMAP, mmap_file, i * PGSIZE,0, 0);
     hash_insert(&t->s_pte, &spte->hash_elem);
   }
 
@@ -290,7 +285,7 @@ void vm_grow_stack(uint32_t *fault_addr) {
   // TEST
   // struct sPageTableEntry *spte = getCustomSupPTE(fault_addr_rd, LOC_FRME, NULL, 0, 0);
   // struct frame_table_entry *fte = _vm_malloc_fte(fault_addr_rd, spte);
-  struct sPageTableEntry *spte = getCustomSupPTE(fault_addr_rd, LOC_FRME, NULL, 0, 0);
+  struct sPageTableEntry *spte = getCustomSupPTE(fault_addr_rd, LOC_FRME, NULL, 0, 0, 0);
   struct frame_table_entry *fte = _vm_malloc_fte(frame, spte);
 
   if (!install_page(fault_addr_rd, frame, true))
@@ -315,7 +310,7 @@ void* vm_grow_stack_bandaid(uint32_t *fault_addr) {
   // TEST
   // struct sPageTableEntry *spte = getCustomSupPTE(fault_addr_rd, LOC_FRME, NULL, 0, 0);
   // struct frame_table_entry *fte = _vm_malloc_fte(fault_addr_rd, spte);
-  struct sPageTableEntry *spte = getCustomSupPTE(fault_addr_rd, LOC_FRME, NULL, 0, 0);
+  struct sPageTableEntry *spte = getCustomSupPTE(fault_addr_rd, LOC_FRME, NULL, 0, 0, 0);
   struct frame_table_entry *fte = _vm_malloc_fte(frame, spte);
 
   // if (!install_page(fault_addr_rd, frame, true))

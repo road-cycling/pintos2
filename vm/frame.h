@@ -18,7 +18,7 @@ struct frame_table_entry {
 
 void frame_init(void);
 bool vm_free_frame(void *);
-void* vm_get_no_pf_frame(enum palloc_flags);
+//void* vm_get_no_pf_frame(enum palloc_flags);
 void vm_grow_stack (uint32_t *);
 struct frame_table_entry *vm_find_in_list(uint32_t *vpage_base);
 void vm_load_install (uint32_t *, struct sPageTableEntry *);

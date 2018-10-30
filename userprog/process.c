@@ -39,7 +39,6 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t process_execute (char *file_name) {
   char *fn_copy;
   tid_t tid;
-
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
 //#ifdef VM
@@ -130,12 +129,10 @@ static void start_process (void *file_name_) {
    does nothing. */
 int
 process_wait (tid_t child_tid) {
-
   struct thread *createdThread = getThreadByID(child_tid);
   if (createdThread != NULL && createdThread->parentID == thread_tid()) {
     createdThread->isWaitedOn = 1;
     sema_down(&createdThread->ifWait);
-
     int status = getReturnStatus(child_tid);
     return status;
   }
@@ -442,16 +439,60 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
-
+   // static bool
+   // load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
+   //   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
+   //   ASSERT (pg_ofs (upage) == 0);
+   //   ASSERT (ofs % PGSIZE == 0);
+   //
+   //   file_seek (file, ofs);
+   //   while (read_bytes > 0 || zero_bytes > 0) {
+   //       /* Calculate how to fill this page.
+   //          We will read PAGE_READ_BYTES bytes from FILE
+   //          and zero the final PAGE_ZERO_BYTES bytes. */
+   //       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+   //       size_t page_zero_bytes = PGSIZE - page_read_bytes;
+   //
+   //       /* Get a page of memory. */
+   //       uint8_t *kpage = palloc_get_page (PAL_USER);
+   //       if (kpage == NULL)
+   //         return false;
+   //
+   //       /* Load this page. */
+   //       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) {
+   //           palloc_free_page (kpage);
+   //           return false;
+   //         }
+   //       memset (kpage + page_read_bytes, 0, page_zero_bytes);
+   //
+   //       /* Add the page to the process's address space. */
+   //       if (!install_page (upage, kpage, writable)) {
+   //
+   //           palloc_free_page (kpage);
+   //           return false;
+   //         }
+   //
+   //        printf("read_bytes: %d\npage_read_bytes: %d\nzero_bytes: %d\npage_zero_bytes: %d\nfile_offset: %d\n\n\n", read_bytes, page_read_bytes, zero_bytes, page_zero_bytes, file_tell(file));
+   //
+   //       /* Advance. */
+   //       read_bytes -= page_read_bytes;
+   //       zero_bytes -= page_zero_bytes;
+   //       upage += PGSIZE;
+   //     }
+   //   return true;
+   // }
 
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
+
+  //printf("Load Segment Called\n");
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
   struct thread *t = thread_current();
 
   file_seek (file, ofs);
+  size_t bytes_read_so_far = 0;
   while (read_bytes > 0 || zero_bytes > 0) {
       /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
@@ -460,12 +501,21 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       if (page_lookup(upage, &t->s_pte) == NULL) {
-        struct sPageTableEntry *spte = getCustomSupPTE((uint32_t *)upage, page_zero_bytes == PGSIZE ? LOC_ZERO : LOC_MMAP, file, page_read_bytes + ofs, 0);
-        //printf("file length: %d\n", file_length(spte->file));
+
+        struct sPageTableEntry *spte = getCustomSupPTE((uint32_t *)upage, LOC_MMAP, file, file_tell(file), page_read_bytes, 0);
         hash_insert(&t->s_pte, &spte->hash_elem);
       } else {
         return false;
       }
+
+
+      // printf("File Seek @ page_read_bytes: %d + file_tell(file): %d = %d\n",
+      //   page_read_bytes, file_tell(file), page_read_bytes + file_tell(file));
+      // printf("\n\n");
+      file_seek(file, page_read_bytes + file_tell(file));
+
+      //printf("read_bytes: %d\npage_read_bytes: %d\nzero_bytes: %d\npage_zero_bytes: %d\nfile_offset: %d\n\n\n", read_bytes, page_read_bytes, zero_bytes, page_zero_bytes, file_tell(file));
+
       //
       // if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) {
       //     palloc_free_page (kpage);
@@ -491,6 +541,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes,
       upage += PGSIZE;
     }
     //printf("returning\n");
+    //printf("\n\n\n END \n\n\n");
   return true;
 }
 
@@ -598,8 +649,6 @@ static bool setup_stack (void **esp, char *args) {
     }
     //hex_dump(*esp, *esp, PHYS_BASE - *esp, true);
   }
-
-
   return success;
 }
 

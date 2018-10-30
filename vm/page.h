@@ -18,6 +18,7 @@ struct sPageTableEntry {
   uint8_t location;              /* Struct not packed / size matters less */
   struct file *file;             /* FP */
   off_t file_offset;             /* FP Offset */
+  off_t read_bytes;              /* disk read bytes */
   size_t disk_offset;            /* disk Offset */
 
   bool dirty;
@@ -32,6 +33,6 @@ bool page_less (const struct hash_elem *, const struct hash_elem *, void * UNUSE
 // void page_free (struct hash_elem*, void * UNUSED);
 struct sPageTableEntry *page_lookup (void *, struct hash *);
 struct sPageTableEntry *getSupPTE(uint32_t *);
-struct sPageTableEntry *getCustomSupPTE(uint32_t *, uint8_t, struct file *, off_t, size_t);
+struct sPageTableEntry *getCustomSupPTE(uint32_t *, uint8_t, struct file *, off_t, off_t, size_t);
 
 #endif /* vm/page.h */
