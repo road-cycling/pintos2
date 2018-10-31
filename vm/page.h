@@ -20,8 +20,8 @@ struct sPageTableEntry {
   off_t file_offset;             /* FP Offset */
   off_t read_bytes;              /* disk read bytes */
   size_t disk_offset;            /* disk Offset */
-
   bool dirty;
+  struct frame_table_entry *fte; /*Frame Table Entry*/
   // struct thread *t thread_current
   //bool dirty;
   //bool accessed;

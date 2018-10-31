@@ -16,6 +16,7 @@ struct sPageTableEntry *getCustomSupPTE(uint32_t *user_vaddr, uint8_t location,
   spte->file_offset = file_offset;
   spte->read_bytes = read_bytes;
   spte->disk_offset = disk_offset;
+  spte->fte = NULL;
   spte->dirty = false;
   return spte;
 }

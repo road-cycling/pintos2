@@ -235,6 +235,8 @@ static int write(uint32_t *args) {
   char* buffer = (char *) args[2];
   unsigned size = (unsigned) args[3];
 
+  // printf("FD: %d\t Size: %d\n", fd, size);
+
   lock_acquire(&fileSystemLock);
 #ifdef VM
   if (fd == 1) {
@@ -281,7 +283,7 @@ static int write(uint32_t *args) {
   }
 #endif
   lock_release(&fileSystemLock);
-
+  // printf("SIZE IS: %d\n", size);
   return size;
 }
 
@@ -374,7 +376,7 @@ static int read(uint32_t *args) {
  void *buffer = (void *) args[2];
  unsigned length = (unsigned) args[3];
  struct file *fp = NULL;
- int bytes_read;
+ int bytes_read = 0;
 
  if (!isValidAddr(buffer) || fd == 1 || fd == 2) {
    exit(NULL);
@@ -391,7 +393,7 @@ static int read(uint32_t *args) {
       return 0;
     }
     if (s_fd->mmap == NULL) {
-      bytes_read = file_read(fp, buffer, (uint32_t) length);
+      bytes_read = file_read(s_fd->file, buffer, (uint32_t) length);
       lock_release(&fileSystemLock);
       return bytes_read;
     } else {

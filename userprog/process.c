@@ -503,6 +503,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes,
       if (page_lookup(upage, &t->s_pte) == NULL) {
 
         struct sPageTableEntry *spte = getCustomSupPTE((uint32_t *)upage, LOC_MMAP, file, file_tell(file), page_read_bytes, 0);
+        // printf("Process Load: user_vaddr: %x\n", spte->user_vaddr);
         hash_insert(&t->s_pte, &spte->hash_elem);
       } else {
         return false;

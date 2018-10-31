@@ -161,12 +161,9 @@ static void page_fault (struct intr_frame *f) {
   struct thread *t = thread_current();
   struct sPageTableEntry *spte = page_lookup(pg_round_down(fault_addr), &t->s_pte);
   if (!spte && ((f->esp - 32) <= fault_addr) /* && (fault_addr <= (f->esp + 4))*/) {
-    //printf("Growing Stack\n");
     vm_grow_stack(fault_addr);
     return ;
   } else if (spte) {
-    //printf("vm_load_install\n");
-
     //printf("\n\nstruct sPageTableEntry {\n\tuint32_t *user_vaddr = %x\n\tuint8_t location = %d\n\tstruct file *file = %x\n\toff_t file_offset = %d\n\tsize_t disk_offset = %d\n\tdirty = %d\n};\n\n",
     //spte->user_vaddr, spte->location, spte->file, spte->file_offset, spte->disk_offset, spte->dirty);
 
