@@ -12,6 +12,7 @@ struct mmap_file {
   int fd;
   int pages_taken;
   mapid_t m_id;
+  int file_size;
   struct thread *owner;
   struct list_elem elem;
 };
@@ -20,6 +21,7 @@ struct mmap_file {
 void syscall_init (void);
 
 struct file *getFileFromFD(int, struct thread *);
+struct fileDescriptor *getFD(int, struct thread *);
 struct fileDescriptor *closeHelperThread(int, struct list *, struct thread *);
 struct fileDescriptor *closeHelperGlobal(int, struct list *, struct thread *);
 

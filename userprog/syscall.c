@@ -17,6 +17,7 @@
 #ifdef VM
 #include "lib/round.h"
 #include "vm/frame.h"
+#include "vm/page.h"
 #endif
 
 typedef int pid_t;
@@ -31,7 +32,7 @@ struct fileDescriptor {
   int fd;
   struct file *file;
   struct thread *t;
-  //struct mmap_file *mmap;
+  struct mmap_file *mmap;
   struct list_elem globalFDList;
   struct list_elem threadFDList;
 };
@@ -230,11 +231,44 @@ static int write(uint32_t *args) {
     thread_exit();
   }
   int fd = (int) args[1];
+  //need to copy buffer into memory
   char* buffer = (char *) args[2];
   unsigned size = (unsigned) args[3];
 
   lock_acquire(&fileSystemLock);
+#ifdef VM
+  if (fd == 1) {
+    putbuf(buffer, size);
+  } else {
+    struct fileDescriptor *s_fd = getFD(fd, thread_current());
+    if (s_fd == NULL) {
+      lock_release(&fileSystemLock);
+      return 0;
+    }
+    // write to file
+    if (s_fd->mmap == NULL) {
+      size = file_write(s_fd->file, buffer, size);
+    } else {
+      if (size > (unsigned)s_fd->mmap->file_size) {
+        lock_release(&fileSystemLock);
+        return -1;
+      }
+      int i = 0;
+      int numPages = DIV_ROUND_UP(size, PGSIZE);
+      // memcpy (destination, source, length)
+      for (; i < numPages; i++) {
+        if (i == numPages - 1) {
+          pg_mark_dirty(s_fd->mmap->base + i * PGSIZE, (unsigned)s_fd->mmap->file_size - i * PGSIZE);
+          memcpy(s_fd->mmap->base + i * PGSIZE, buffer + i * PGSIZE, size - i * PGSIZE);
+        } else {
+          pg_mark_dirty(s_fd->mmap->base + i * PGSIZE, PGSIZE);
+          memcpy(s_fd->mmap->base + i * PGSIZE, buffer + i * PGSIZE, PGSIZE);
+        }
+      }
+    }
+  }
 
+#else
   if (fd == 1) {
     putbuf(buffer, size);
   } else {
@@ -245,6 +279,7 @@ static int write(uint32_t *args) {
     }
     size = file_write(file, buffer, size);
   }
+#endif
   lock_release(&fileSystemLock);
 
   return size;
@@ -289,7 +324,7 @@ static int open(uint32_t *args) {
     fileDesc->t = t;
     fileDesc->fd = setFD;
     fileDesc->file = f;
-    //fileDesc->mmap = NULL;
+    fileDesc->mmap = NULL;
 
     //implicitly protected
     list_push_back(&t->fdList, &fileDesc->threadFDList);
@@ -332,34 +367,63 @@ static unsigned tell (uint32_t *args) {
   return nextByte;
 }
 
+// TODO: Fd 0 reads from the keyboard using input_getc().
 static int read(uint32_t *args) {
- //int read(int fd, void *buffer, unsigned length);
- //pass tests/userprog/read-stdout
- //pass tests/userprog/read-bad-fd
-
- //||
- //FAIL tests/userprog/read-stdout
- //FAIL tests/userprog/read-bad-fd
 
  int fd = (int) args[1];
  void *buffer = (void *) args[2];
  unsigned length = (unsigned) args[3];
  struct file *fp = NULL;
+ int bytes_read;
 
  if (!isValidAddr(buffer) || fd == 1 || fd == 2) {
    exit(NULL);
    thread_exit();
  }
  lock_acquire(&fileSystemLock);
+#ifdef VM
+  if (fd == 0) {
+    printf("I need to fix this");
+  } else {
+    struct fileDescriptor *s_fd = getFD(fd, thread_current());
+    if (s_fd == NULL) {
+      lock_release(&fileSystemLock);
+      return 0;
+    }
+    if (s_fd->mmap == NULL) {
+      bytes_read = file_read(fp, buffer, (uint32_t) length);
+      lock_release(&fileSystemLock);
+      return bytes_read;
+    } else {
+      if (length > (unsigned) s_fd->mmap->file_size) {
+        lock_release(&fileSystemLock);
+        return 0;
+      }
+
+      int i = 0;
+      int numPages = DIV_ROUND_UP(length, PGSIZE);
+      // memcpy (destination, source, length)
+      for (; i < numPages; i++) {
+        if (i == numPages - 1) {
+          memcpy(buffer + PGSIZE * i, s_fd->mmap->base + i * PGSIZE, length - i * PGSIZE);
+        } else {
+          memcpy(buffer + PGSIZE * i, s_fd->mmap->base + i * PGSIZE, PGSIZE);
+        }
+      }
+    }
+  }
+
+#else
  fp = getFileFromFD(fd, thread_current());
  if (fp == NULL) {
    lock_release(&fileSystemLock);
    return 0;
  }
- int bytesRead = file_read(fp, buffer, (uint32_t) length);
+ bytes_read = file_read(fp, buffer, (uint32_t) length);
+#endif
  lock_release(&fileSystemLock);
 
- return bytesRead;
+ return bytes_read;
 }
 
 
@@ -384,18 +448,22 @@ static int filesize (uint32_t *args) {
 static mapid_t mmap(uint32_t *args) {
   int fd = (int) args[1];
   void *addr = (void *) args[2];
-  struct file *fp = NULL;
+  struct fileDescriptor *s_fd = NULL;
 
-  // @reopen file?
   if (!isValidAddr(addr) || pg_ofs(addr) != 0 || fd == 0 || fd == 1) {
     exit(NULL);
     thread_exit();
   }
 
   lock_acquire(&fileSystemLock);
-  if ((fp = getFileFromFD(fd, thread_current())) != NULL) {
 
-    struct mmap_file *_mmapFile = vm_install_mmap(addr, fp, fd);
+  if ((s_fd = getFD(fd, thread_current())) != NULL) {
+    if (s_fd->mmap != NULL) {
+      lock_release(&fileSystemLock);
+      return -1;
+    }
+
+    struct mmap_file *_mmapFile = vm_install_mmap(addr, s_fd->file, fd);
 
     if (_mmapFile == NULL) {
       lock_release(&fileSystemLock);
@@ -410,8 +478,8 @@ static mapid_t mmap(uint32_t *args) {
     return _mmapFile->m_id;
 
   }
-  lock_release(&fileSystemLock);
 
+  lock_release(&fileSystemLock);
   return -1;
 }
 
@@ -528,6 +596,17 @@ struct file *getFileFromFD(int fd, struct thread *t) {
   }
   return NULL;
 }
+
+struct fileDescriptor *getFD(int fd, struct thread *t) {
+  struct list_elem *iter;
+  for (iter = list_begin(&t->fdList); iter != list_end(&t->fdList); iter = list_next(iter)) {
+    struct fileDescriptor *fdStruct = list_entry(iter, struct fileDescriptor, threadFDList);
+    if (fdStruct->fd == fd && fdStruct->t ==t)
+      return fdStruct;
+  }
+  return NULL;
+}
+
 
 /* need 2 functions due to
 ../../userprog/syscall.c:211: error: ‘struct fileDescriptor’ has no member named ‘global’

@@ -2,6 +2,7 @@
 #include "vm/page.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "threads/thread.h"
 // on PF look up faulting addr / pull it in
 // Rss management on PEXIT ;;
 
@@ -22,6 +23,15 @@ struct sPageTableEntry *getCustomSupPTE(uint32_t *user_vaddr, uint8_t location,
 
 struct sPageTableEntry *getSupPTE (uint32_t *user_vaddr) {
   return getCustomSupPTE(user_vaddr, LOC_ZERO, NULL, (off_t)0, (off_t) 0,(size_t)0);
+}
+
+void pg_mark_dirty(uint32_t *user_vaddr, int read_bytes) {
+  ASSERT (pg_ofs(user_vaddr) == 0);
+  struct sPageTableEntry *s_pte = NULL;
+  if ((s_pte = page_lookup(user_vaddr, &thread_current()->s_pte)) != NULL) {
+    s_pte->dirty = true;
+    s_pte->read_bytes = read_bytes;
+  }
 }
 
 unsigned page_hash (const struct hash_elem *elem, void *aux UNUSED) {

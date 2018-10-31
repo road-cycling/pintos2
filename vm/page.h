@@ -27,7 +27,7 @@ struct sPageTableEntry {
   //bool accessed;
 };
 
-
+void pg_mark_dirty(uint32_t *, int);
 unsigned page_hash (const struct hash_elem *, void * UNUSED);
 bool page_less (const struct hash_elem *, const struct hash_elem *, void * UNUSED);
 // void page_free (struct hash_elem*, void * UNUSED);

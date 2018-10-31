@@ -37,7 +37,7 @@ void* vm_grow_stack_bandaid(uint32_t *fault_addr);
 struct mmap_file *vm_install_mmap(void *, struct file *, int);
 bool vm_muunmap_helper(struct mmap_file *mmf);
 struct frame_table_entry *_vm_malloc_fte (uint32_t *, struct sPageTableEntry *);
-struct mmap_file *_vm_malloc_mmap(void *, int, int, struct thread *);
+struct mmap_file *_vm_malloc_mmap(void *, int, int, struct thread *, int);
 
 #endif /* vm/frame.h */
 
