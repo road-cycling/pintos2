@@ -126,7 +126,6 @@ static void page_fault (struct intr_frame *f) {
   bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
-
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
      data.  It is not necessarily the address of the instruction
@@ -152,7 +151,6 @@ static void page_fault (struct intr_frame *f) {
   if (fault_addr == NULL                        ||
       (user && fault_addr >= (int *)0xC0000000) ||
       fault_addr <= 0x08048000) {
-    //printf("exitingabove\n");
     printf("%s: exit(-1)\n", thread_current()->name);
     thread_exit ();
   }
@@ -164,8 +162,8 @@ static void page_fault (struct intr_frame *f) {
     vm_grow_stack(fault_addr);
     return ;
   } else if (spte) {
-    //printf("\n\nstruct sPageTableEntry {\n\tuint32_t *user_vaddr = %x\n\tuint8_t location = %d\n\tstruct file *file = %x\n\toff_t file_offset = %d\n\tsize_t disk_offset = %d\n\tdirty = %d\n};\n\n",
-    //spte->user_vaddr, spte->location, spte->file, spte->file_offset, spte->disk_offset, spte->dirty);
+    // printf("\n\nstruct sPageTableEntry {\n\tuint32_t *user_vaddr = %x\n\tuint8_t location = %d\n\tstruct file *file = %x\n\toff_t file_offset = %d\n\tsize_t disk_offset = %d\n\tdirty = %d\n};\n\n",
+    // spte->user_vaddr, spte->location, spte->file, spte->file_offset, spte->disk_offset, spte->dirty);
 
     vm_load_install(fault_addr, spte);
     return ;

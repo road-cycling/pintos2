@@ -83,7 +83,8 @@ static void halt(void);
 
 #ifdef VM
 static mapid_t mmap(uint32_t *args);
-static void muunmap (uint32_t *args);
+static void munmap (uint32_t *args);
+static bool is_v_mmap_addr(uint32_t *vaddr);
 #endif
 
 /*
@@ -143,7 +144,7 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
   } else if (*args == SYS_MMAP) {
      f->eax = mmap(args);
   } else if (*args == SYS_MUNMAP) {
-     muunmap(args);
+     munmap(args);
   }
 }
 
@@ -448,13 +449,14 @@ static int filesize (uint32_t *args) {
 #ifdef VM
 
 static mapid_t mmap(uint32_t *args) {
+
   int fd = (int) args[1];
   void *addr = (void *) args[2];
   struct fileDescriptor *s_fd = NULL;
 
-  if (!isValidAddr(addr) || pg_ofs(addr) != 0 || fd == 0 || fd == 1) {
-    exit(NULL);
-    thread_exit();
+  if (!is_v_mmap_addr(addr) || pg_ofs(addr) != 0 || fd == 0 || fd == 1) {
+    // printf("address is: %x\n", addr);
+    return -1;
   }
 
   lock_acquire(&fileSystemLock);
@@ -485,7 +487,8 @@ static mapid_t mmap(uint32_t *args) {
   return -1;
 }
 
-static void muunmap (uint32_t *args) {
+static void munmap (uint32_t *args) {
+
   mapid_t mmap_id = (mapid_t) args[1];
   //int i = 0;
 
@@ -496,10 +499,8 @@ static void muunmap (uint32_t *args) {
   if (_mmapFile == NULL)
     return;
 
-  if (vm_muunmap_helper(_mmapFile)) {
-    printf("Success\n");
-  } else {
-    printf("Error?"); // PANIC to kernel
+  if (!vm_muunmap_helper(_mmapFile)) {
+    printf("not PANIC() but something went terribly wrong\n");
   }
 
   lock_acquire(&_mmapLock);
@@ -563,6 +564,13 @@ int getReturnStatus(tid_t threadID) {
   }
   return -1;
 }
+
+#ifdef VM
+static bool is_v_mmap_addr(uint32_t *vaddr) {
+  struct thread *cur = thread_current();
+  return vaddr != NULL && is_user_vaddr(vaddr) && (pagedir_get_page(cur->pagedir, (void *) vaddr) == NULL);
+}
+#endif
 
 
 static bool isValidAddr(uint32_t *vaddr) {

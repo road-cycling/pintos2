@@ -186,7 +186,7 @@ struct mmap_file *vm_install_mmap(void *vaddr_base, struct file *file, int fd) {
 
   int i = 0;
   for (; i < pages_taken; i++) {
-    if (page_lookup(vaddr_base + i * PGSIZE, &t->s_pte) == NULL) {
+    if (page_lookup(vaddr_base + i * PGSIZE, &t->s_pte) != NULL || pagedir_get_page(t->pagedir, vaddr_base + i * PGSIZE) != NULL) {
       free(mmap_f);
       return NULL;
     }
@@ -227,6 +227,7 @@ bool vm_muunmap_helper(struct mmap_file *mmf) {
     }
 
     hash_delete(&t->s_pte, &spte->hash_elem);
+    // file_close(spte->file);
     free(spte);
   }
   return true;

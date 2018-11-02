@@ -3,6 +3,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "threads/thread.h"
+#include "filesys/file.h"
 // on PF look up faulting addr / pull it in
 // Rss management on PEXIT ;;
 
@@ -12,7 +13,7 @@ struct sPageTableEntry *getCustomSupPTE(uint32_t *user_vaddr, uint8_t location,
   struct sPageTableEntry *spte = malloc(sizeof (struct sPageTableEntry));
   spte->user_vaddr = pg_round_down(user_vaddr);
   spte->location = location;
-  spte->file = file;
+  spte->file = /*file_reopen(file);*/ file;
   spte->file_offset = file_offset;
   spte->read_bytes = read_bytes;
   spte->disk_offset = disk_offset;
