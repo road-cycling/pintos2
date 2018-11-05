@@ -20,14 +20,14 @@ struct sPageTableEntry {
   off_t file_offset;             /* FP Offset */
   off_t read_bytes;              /* disk read bytes */
   size_t disk_offset;            /* disk Offset */
-
   bool dirty;
+  struct frame_table_entry *fte; /*Frame Table Entry*/
   // struct thread *t thread_current
   //bool dirty;
   //bool accessed;
 };
 
-
+void pg_mark_dirty(uint32_t *, int);
 unsigned page_hash (const struct hash_elem *, void * UNUSED);
 bool page_less (const struct hash_elem *, const struct hash_elem *, void * UNUSED);
 // void page_free (struct hash_elem*, void * UNUSED);

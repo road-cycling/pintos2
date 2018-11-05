@@ -126,7 +126,6 @@ static void page_fault (struct intr_frame *f) {
   bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
-
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
      data.  It is not necessarily the address of the instruction
@@ -148,27 +147,101 @@ static void page_fault (struct intr_frame *f) {
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-//  printf("In page fault\n PF_P: %d\n PF_W: %d\n PF_U: %d\n",not_present, write, user);
+  // @3.1.4.1 Typical Memory Layout
+
+ // printf("In page fault\n PF_P: %d\n PF_W: %d\n PF_U: %d...VADDR: %x\n",not_present, write, user, fault_addr);
+ // printf("Code segment: %x\n", f->cs);
   if (fault_addr == NULL                        ||
       (user && fault_addr >= (int *)0xC0000000) ||
-      fault_addr <= 0x08048000) {
-    //printf("exitingabove\n");
+      fault_addr <= 0x08048000                  ||
+      // f->cs == SEL_UCSEG && write               ||
+      !not_present
+    ) {
     printf("%s: exit(-1)\n", thread_current()->name);
     thread_exit ();
   }
+
+  //804aa5b 8049165 804c5e4 80485f4
+  /*
+  + In page fault
+  +  PF_P: 1
+  +  PF_W: 0
+  +  PF_U: 1...VADDR: 80485f4
+  + Code segment: 1b
+  + In page fault
+  +  PF_P: 1
+  +  PF_W: 1
+  +  PF_U: 1...VADDR: 804c5e4
+  + Code segment: 1b
+  + In page fault
+  +  PF_P: 1
+  +  PF_W: 0
+  +  PF_U: 1...VADDR: 8049165
+  + Code segment: 1b
+  + In page fault
+  +  PF_P: 1
+  +  PF_W: 0
+  +  PF_U: 1...VADDR: 804aa5b
+  + Code segment: 1b
+
+  */
+
+  /* PT GROW STACK
+  In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 80485fc
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 1
+ PF_U: 1...VADDR: 804c604
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 804916d
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 804aa47
+  */
+
+  /*
+  Grow Stack
+  In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 8048720
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 1
+ PF_U: 1...VADDR: 804ca84
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 8049291
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 804aba8
+ */
+
+  // printf("Here! %x\n", fault_addr);
 
 #ifdef VM
   struct thread *t = thread_current();
   struct sPageTableEntry *spte = page_lookup(pg_round_down(fault_addr), &t->s_pte);
   if (!spte && ((f->esp - 32) <= fault_addr) /* && (fault_addr <= (f->esp + 4))*/) {
-    //printf("Growing Stack\n");
     vm_grow_stack(fault_addr);
     return ;
   } else if (spte) {
-    //printf("vm_load_install\n");
-
-    //printf("\n\nstruct sPageTableEntry {\n\tuint32_t *user_vaddr = %x\n\tuint8_t location = %d\n\tstruct file *file = %x\n\toff_t file_offset = %d\n\tsize_t disk_offset = %d\n\tdirty = %d\n};\n\n",
-    //spte->user_vaddr, spte->location, spte->file, spte->file_offset, spte->disk_offset, spte->dirty);
+    // printf("\n\nstruct sPageTableEntry {\n\tuint32_t *user_vaddr = %x\n\tuint8_t location = %d\n\tstruct file *file = %x\n\toff_t file_offset = %d\n\tsize_t disk_offset = %d\n\tdirty = %d\n};\n\n",
+    // spte->user_vaddr, spte->location, spte->file, spte->file_offset, spte->disk_offset, spte->dirty);
 
     vm_load_install(fault_addr, spte);
     return ;

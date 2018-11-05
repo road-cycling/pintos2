@@ -12,14 +12,19 @@ struct mmap_file {
   int fd;
   int pages_taken;
   mapid_t m_id;
+  int file_size;
   struct thread *owner;
   struct list_elem elem;
 };
+void mmap_write_back_on_shutdown(void);
+int get_mmap_id(void);
+
 #endif
 
 void syscall_init (void);
 
 struct file *getFileFromFD(int, struct thread *);
+struct fileDescriptor *getFD(int, struct thread *);
 struct fileDescriptor *closeHelperThread(int, struct list *, struct thread *);
 struct fileDescriptor *closeHelperGlobal(int, struct list *, struct thread *);
 

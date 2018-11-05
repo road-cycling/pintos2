@@ -10,6 +10,7 @@
 #include "userprog/process.h"
 #include "userprog/syscall.h"
 #include "devices/shutdown.h"
+#include "devices/input.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 
@@ -17,6 +18,7 @@
 #ifdef VM
 #include "lib/round.h"
 #include "vm/frame.h"
+#include "vm/page.h"
 #endif
 
 typedef int pid_t;
@@ -31,7 +33,7 @@ struct fileDescriptor {
   int fd;
   struct file *file;
   struct thread *t;
-  //struct mmap_file *mmap;
+  struct mmap_file *mmap;
   struct list_elem globalFDList;
   struct list_elem threadFDList;
 };
@@ -55,9 +57,8 @@ struct lock _mmapLock;
 //   struct list_elem elem;
 // };
 
-int get_mmap_id(void);
 
-
+struct mmap_file*_find_mmap_by_thread(struct thread *t);
 struct mmap_file *_findMmapFile(mapid_t mid);
 #endif
 
@@ -82,7 +83,8 @@ static void halt(void);
 
 #ifdef VM
 static mapid_t mmap(uint32_t *args);
-static void muunmap (uint32_t *args);
+static void munmap (uint32_t *args);
+static bool is_v_mmap_addr(uint32_t *vaddr);
 #endif
 
 /*
@@ -142,7 +144,7 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
   } else if (*args == SYS_MMAP) {
      f->eax = mmap(args);
   } else if (*args == SYS_MUNMAP) {
-     muunmap(args);
+     munmap(args);
   }
 }
 
@@ -155,7 +157,6 @@ static pid_t exec (uint32_t *args) {
   lock_acquire(&fileSystemLock);
 
   tid_t childID = process_execute(file);
-
   lock_release(&fileSystemLock);
 
   return childID;
@@ -230,11 +231,46 @@ static int write(uint32_t *args) {
     thread_exit();
   }
   int fd = (int) args[1];
+  //need to copy buffer into memory
   char* buffer = (char *) args[2];
   unsigned size = (unsigned) args[3];
 
-  lock_acquire(&fileSystemLock);
+  // printf("FD: %d\t Size: %d\n", fd, size);
 
+  lock_acquire(&fileSystemLock);
+#ifdef VM
+  if (fd == 1) {
+    putbuf(buffer, size);
+  } else {
+    struct fileDescriptor *s_fd = getFD(fd, thread_current());
+    if (s_fd == NULL) {
+      lock_release(&fileSystemLock);
+      return 0;
+    }
+    // write to file
+    if (s_fd->mmap == NULL) {
+      size = file_write(s_fd->file, buffer, size);
+    } else {
+      if (size > (unsigned)s_fd->mmap->file_size) {
+        lock_release(&fileSystemLock);
+        return -1;
+      }
+      int i = 0;
+      int numPages = DIV_ROUND_UP(size, PGSIZE);
+      // memcpy (destination, source, length)
+      for (; i < numPages; i++) {
+        if (i == numPages - 1) {
+          pg_mark_dirty(s_fd->mmap->base + i * PGSIZE, (unsigned)s_fd->mmap->file_size - i * PGSIZE);
+          memcpy(s_fd->mmap->base + i * PGSIZE, buffer + i * PGSIZE, size - i * PGSIZE);
+        } else {
+          pg_mark_dirty(s_fd->mmap->base + i * PGSIZE, PGSIZE);
+          memcpy(s_fd->mmap->base + i * PGSIZE, buffer + i * PGSIZE, PGSIZE);
+        }
+      }
+    }
+  }
+
+#else
   if (fd == 1) {
     putbuf(buffer, size);
   } else {
@@ -245,8 +281,9 @@ static int write(uint32_t *args) {
     }
     size = file_write(file, buffer, size);
   }
+#endif
   lock_release(&fileSystemLock);
-
+  // printf("SIZE IS: %d\n", size);
   return size;
 }
 
@@ -289,7 +326,7 @@ static int open(uint32_t *args) {
     fileDesc->t = t;
     fileDesc->fd = setFD;
     fileDesc->file = f;
-    //fileDesc->mmap = NULL;
+    fileDesc->mmap = NULL;
 
     //implicitly protected
     list_push_back(&t->fdList, &fileDesc->threadFDList);
@@ -332,34 +369,101 @@ static unsigned tell (uint32_t *args) {
   return nextByte;
 }
 
+// TODO: Fd 0 reads from the keyboard using input_getc().
 static int read(uint32_t *args) {
- //int read(int fd, void *buffer, unsigned length);
- //pass tests/userprog/read-stdout
- //pass tests/userprog/read-bad-fd
 
- //||
- //FAIL tests/userprog/read-stdout
- //FAIL tests/userprog/read-bad-fd
-
+  // printf("Read Called\n");
  int fd = (int) args[1];
  void *buffer = (void *) args[2];
  unsigned length = (unsigned) args[3];
  struct file *fp = NULL;
+ int bytes_read = 0;
 
- if (!isValidAddr(buffer) || fd == 1 || fd == 2) {
+ if (!is_user_vaddr(buffer) || fd == 1 || fd == 2) {
    exit(NULL);
    thread_exit();
  }
+ // if (!isValidAddr(buffer) || fd == 1 || fd == 2) {
+ //   printf("Not VAlid\n");
+ //   if (is_user_vaddr(buffer)) {
+ //     printf("Buffer Now RD: %x\n", pg_round_down(buffer));
+ //     printf("Buffer Now:    %x\n", buffer);
+ //     if (pagedir_get_page(thread_current()->pagedir,(void *) pg_round_down(buffer)) == NULL) {
+ //       printf("No Page Dir\n");
+ //     } else {
+ //       printf("We have a page dir\n");
+ //     }
+ //   }
+ //   printf("Buffer is: %x\n", buffer);
+ //   exit(NULL);
+ //   thread_exit();
+ // }
+ if (fd == 0) {
+   unsigned length_copy = length;
+   uint32_t* buff = buffer;
+   int i = 0;
+   while (length-- > 0) {
+     buff[i] = input_getc();
+     // *((uint32_t)buffer + i++)= input_getc();
+     i++;
+   }
+
+   return length_copy - length; //should be length
+ }
  lock_acquire(&fileSystemLock);
+#ifdef VM
+  if (fd == 0) {
+    unsigned length_copy = length;
+    uint32_t* buff = buffer;
+    int i = 0;
+    while (length-- > 0) {
+      buff[i] = input_getc();
+      // *((uint32_t)buffer + i++)= input_getc();
+      i++;
+    }
+
+    return length_copy - length; //should be length
+  } else {
+    struct fileDescriptor *s_fd = getFD(fd, thread_current());
+    if (s_fd == NULL) {
+      lock_release(&fileSystemLock);
+      return 0;
+    }
+    if (s_fd->mmap == NULL) {
+      bytes_read = file_read(s_fd->file, buffer, (uint32_t) length);
+      lock_release(&fileSystemLock);
+      return bytes_read;
+    } else {
+      if (length > (unsigned) s_fd->mmap->file_size) {
+        lock_release(&fileSystemLock);
+        return 0;
+      }
+
+      int i = 0;
+      int numPages = DIV_ROUND_UP(length, PGSIZE);
+      // memcpy (destination, source, length)
+      for (; i < numPages; i++) {
+        if (i == numPages - 1) {
+          memcpy(buffer + PGSIZE * i, s_fd->mmap->base + i * PGSIZE, length - i * PGSIZE);
+        } else {
+          memcpy(buffer + PGSIZE * i, s_fd->mmap->base + i * PGSIZE, PGSIZE);
+        }
+      }
+    }
+  }
+
+#else
  fp = getFileFromFD(fd, thread_current());
  if (fp == NULL) {
    lock_release(&fileSystemLock);
    return 0;
  }
- int bytesRead = file_read(fp, buffer, (uint32_t) length);
+ bytes_read = file_read(fp, buffer, (uint32_t) length);
+#endif
  lock_release(&fileSystemLock);
 
- return bytesRead;
+ printf("Bytes Read: %d\n", bytes_read);
+ return bytes_read;
 }
 
 
@@ -382,20 +486,25 @@ static int filesize (uint32_t *args) {
 #ifdef VM
 
 static mapid_t mmap(uint32_t *args) {
+
   int fd = (int) args[1];
   void *addr = (void *) args[2];
-  struct file *fp = NULL;
+  struct fileDescriptor *s_fd = NULL;
 
-  // @reopen file?
-  if (!isValidAddr(addr) || pg_ofs(addr) != 0 || fd == 0 || fd == 1) {
-    exit(NULL);
-    thread_exit();
+  if (!is_v_mmap_addr(addr) || pg_ofs(addr) != 0 || fd == 0 || fd == 1) {
+    // printf("address is: %x\n", addr);
+    return -1;
   }
 
   lock_acquire(&fileSystemLock);
-  if ((fp = getFileFromFD(fd, thread_current())) != NULL) {
 
-    struct mmap_file *_mmapFile = vm_install_mmap(addr, fp, fd);
+  if ((s_fd = getFD(fd, thread_current())) != NULL) {
+    if (s_fd->mmap != NULL) {
+      lock_release(&fileSystemLock);
+      return -1;
+    }
+
+    struct mmap_file *_mmapFile = vm_install_mmap(addr, s_fd->file, fd);
 
     if (_mmapFile == NULL) {
       lock_release(&fileSystemLock);
@@ -410,12 +519,13 @@ static mapid_t mmap(uint32_t *args) {
     return _mmapFile->m_id;
 
   }
-  lock_release(&fileSystemLock);
 
+  lock_release(&fileSystemLock);
   return -1;
 }
 
-static void muunmap (uint32_t *args) {
+static void munmap (uint32_t *args) {
+
   mapid_t mmap_id = (mapid_t) args[1];
   //int i = 0;
 
@@ -426,10 +536,8 @@ static void muunmap (uint32_t *args) {
   if (_mmapFile == NULL)
     return;
 
-  if (vm_muunmap_helper(_mmapFile)) {
-    printf("Success\n");
-  } else {
-    printf("Error?"); // PANIC to kernel
+  if (!vm_muunmap_helper(_mmapFile)) {
+    printf("not PANIC() but something went terribly wrong\n");
   }
 
   lock_acquire(&_mmapLock);
@@ -437,6 +545,22 @@ static void muunmap (uint32_t *args) {
   lock_release(&_mmapLock);
 
   free(_mmapFile);
+}
+
+void mmap_write_back_on_shutdown(void) {
+
+  struct mmap_file *_mmap_file = _find_mmap_by_thread(thread_current());
+  while (_mmap_file != NULL) {
+    if (!vm_muunmap_helper(_mmap_file))
+      printf("not PANIC() but something went terribly wrong\n");
+
+    lock_acquire(&_mmapLock);
+    list_remove(&_mmap_file->elem);
+    lock_release(&_mmapLock);
+    free(_mmap_file);
+
+    _mmap_file = _find_mmap_by_thread(thread_current());
+  }
 }
 
 #endif
@@ -459,6 +583,22 @@ struct mmap_file *_findMmapFile(mapid_t mid) {
     }
   }
 
+  return NULL;
+}
+
+struct mmap_file*_find_mmap_by_thread(struct thread *t) {
+  ASSERT (t != NULL);
+  lock_acquire(&_mmapLock);
+  struct list_elem *iter;
+  for (iter = list_begin(&_mmapList); iter != list_end(&_mmapList); iter = list_next(iter)) {
+    struct mmap_file *_mmap_file = list_entry(iter, struct mmap_file, elem);
+    if (_mmap_file->owner == t) {
+      lock_release(&_mmapLock);
+      return _mmap_file;
+    }
+  }
+
+  lock_release(&_mmapLock);
   return NULL;
 }
 
@@ -494,6 +634,13 @@ int getReturnStatus(tid_t threadID) {
   return -1;
 }
 
+#ifdef VM
+static bool is_v_mmap_addr(uint32_t *vaddr) {
+  struct thread *cur = thread_current();
+  return vaddr != NULL && is_user_vaddr(vaddr) && (pagedir_get_page(cur->pagedir, (void *) vaddr) == NULL);
+}
+#endif
+
 
 static bool isValidAddr(uint32_t *vaddr) {
 
@@ -528,6 +675,17 @@ struct file *getFileFromFD(int fd, struct thread *t) {
   }
   return NULL;
 }
+
+struct fileDescriptor *getFD(int fd, struct thread *t) {
+  struct list_elem *iter;
+  for (iter = list_begin(&t->fdList); iter != list_end(&t->fdList); iter = list_next(iter)) {
+    struct fileDescriptor *fdStruct = list_entry(iter, struct fileDescriptor, threadFDList);
+    if (fdStruct->fd == fd && fdStruct->t ==t)
+      return fdStruct;
+  }
+  return NULL;
+}
+
 
 /* need 2 functions due to
 ../../userprog/syscall.c:211: error: ‘struct fileDescriptor’ has no member named ‘global’

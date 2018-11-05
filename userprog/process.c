@@ -70,6 +70,7 @@ tid_t process_execute (char *file_name) {
     createdThread->parentID = thread_tid();
   } else {
     printf("Critical Error\n");
+    // return -1;
     //shutdown_power_off();
   }
 
@@ -98,6 +99,16 @@ static void start_process (void *file_name_) {
   /* If load failed, quit. */
 
   if (!success) {
+    // struct thread *createdThread = getThreadByID(thread_tid());
+    // if (createdThread != NULL && )
+    // if (createdThread != NULL && createdThread->parentID == thread_tid()) {
+    //   createdThread->isWaitedOn = 1;
+    //   sema_down(&createdThread->ifWait);
+    //   int status = getReturnStatus(child_tid);
+    //   return status;
+    // }
+    // return -1;
+    //TODO: Set return value
     //#ifdef VM
     //  vm_free_frame(file_name);
     //#else
@@ -152,6 +163,10 @@ void process_exit (void) {
      to the kernel-only page directory. */
   pd = cur->pagedir;
   if (pd != NULL) {
+    #ifdef VM
+      mmap_write_back_on_shutdown();
+    #endif
+      // TODO: unmap mmapped pages
       /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
          so that a timer interrupt can't switch back to the
@@ -371,6 +386,7 @@ bool load (const char *file_name, void (**eip) (void), void **esp) {
   success = true;
 
  done:
+  // printf("Returning success: %d\n", success);
   /* We arrive here whether the load is successful or not. */
   //file_close (file);
   return success;
@@ -503,6 +519,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes,
       if (page_lookup(upage, &t->s_pte) == NULL) {
 
         struct sPageTableEntry *spte = getCustomSupPTE((uint32_t *)upage, LOC_MMAP, file, file_tell(file), page_read_bytes, 0);
+        // printf("Process Load: user_vaddr: %x\n", spte->user_vaddr);
         hash_insert(&t->s_pte, &spte->hash_elem);
       } else {
         return false;
