@@ -6,6 +6,7 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "threads/malloc.h"
+#include "threads/pte.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
 #include "userprog/syscall.h"
@@ -378,6 +379,15 @@ static int read(uint32_t *args) {
  unsigned length = (unsigned) args[3];
  struct file *fp = NULL;
  int bytes_read = 0;
+
+ // printf("Read called...address is: %x\n", buffer);
+ //
+ // uint32_t *pt = pagedir_get_page(thread_current()->pagedir, buffer);
+ //
+ // if (*pt & PTE_W == 0) {
+ //   printf("RO page\n");
+ // }
+
 
  if (!is_user_vaddr(buffer) || fd == 1 || fd == 2) {
    exit(NULL);
