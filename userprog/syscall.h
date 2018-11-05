@@ -16,6 +16,9 @@ struct mmap_file {
   struct thread *owner;
   struct list_elem elem;
 };
+void mmap_write_back_on_shutdown(void);
+int get_mmap_id(void);
+
 #endif
 
 void syscall_init (void);

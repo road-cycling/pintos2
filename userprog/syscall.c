@@ -10,6 +10,7 @@
 #include "userprog/process.h"
 #include "userprog/syscall.h"
 #include "devices/shutdown.h"
+#include "devices/input.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 
@@ -56,9 +57,8 @@ struct lock _mmapLock;
 //   struct list_elem elem;
 // };
 
-int get_mmap_id(void);
 
-
+struct mmap_file*_find_mmap_by_thread(struct thread *t);
 struct mmap_file *_findMmapFile(mapid_t mid);
 #endif
 
@@ -157,7 +157,6 @@ static pid_t exec (uint32_t *args) {
   lock_acquire(&fileSystemLock);
 
   tid_t childID = process_execute(file);
-
   lock_release(&fileSystemLock);
 
   return childID;
@@ -373,20 +372,57 @@ static unsigned tell (uint32_t *args) {
 // TODO: Fd 0 reads from the keyboard using input_getc().
 static int read(uint32_t *args) {
 
+  // printf("Read Called\n");
  int fd = (int) args[1];
  void *buffer = (void *) args[2];
  unsigned length = (unsigned) args[3];
  struct file *fp = NULL;
  int bytes_read = 0;
 
- if (!isValidAddr(buffer) || fd == 1 || fd == 2) {
+ if (!is_user_vaddr(buffer) || fd == 1 || fd == 2) {
    exit(NULL);
    thread_exit();
+ }
+ // if (!isValidAddr(buffer) || fd == 1 || fd == 2) {
+ //   printf("Not VAlid\n");
+ //   if (is_user_vaddr(buffer)) {
+ //     printf("Buffer Now RD: %x\n", pg_round_down(buffer));
+ //     printf("Buffer Now:    %x\n", buffer);
+ //     if (pagedir_get_page(thread_current()->pagedir,(void *) pg_round_down(buffer)) == NULL) {
+ //       printf("No Page Dir\n");
+ //     } else {
+ //       printf("We have a page dir\n");
+ //     }
+ //   }
+ //   printf("Buffer is: %x\n", buffer);
+ //   exit(NULL);
+ //   thread_exit();
+ // }
+ if (fd == 0) {
+   unsigned length_copy = length;
+   uint32_t* buff = buffer;
+   int i = 0;
+   while (length-- > 0) {
+     buff[i] = input_getc();
+     // *((uint32_t)buffer + i++)= input_getc();
+     i++;
+   }
+
+   return length_copy - length; //should be length
  }
  lock_acquire(&fileSystemLock);
 #ifdef VM
   if (fd == 0) {
-    printf("I need to fix this");
+    unsigned length_copy = length;
+    uint32_t* buff = buffer;
+    int i = 0;
+    while (length-- > 0) {
+      buff[i] = input_getc();
+      // *((uint32_t)buffer + i++)= input_getc();
+      i++;
+    }
+
+    return length_copy - length; //should be length
   } else {
     struct fileDescriptor *s_fd = getFD(fd, thread_current());
     if (s_fd == NULL) {
@@ -426,6 +462,7 @@ static int read(uint32_t *args) {
 #endif
  lock_release(&fileSystemLock);
 
+ printf("Bytes Read: %d\n", bytes_read);
  return bytes_read;
 }
 
@@ -510,6 +547,22 @@ static void munmap (uint32_t *args) {
   free(_mmapFile);
 }
 
+void mmap_write_back_on_shutdown(void) {
+
+  struct mmap_file *_mmap_file = _find_mmap_by_thread(thread_current());
+  while (_mmap_file != NULL) {
+    if (!vm_muunmap_helper(_mmap_file))
+      printf("not PANIC() but something went terribly wrong\n");
+
+    lock_acquire(&_mmapLock);
+    list_remove(&_mmap_file->elem);
+    lock_release(&_mmapLock);
+    free(_mmap_file);
+
+    _mmap_file = _find_mmap_by_thread(thread_current());
+  }
+}
+
 #endif
 
 //Helper Functions
@@ -530,6 +583,22 @@ struct mmap_file *_findMmapFile(mapid_t mid) {
     }
   }
 
+  return NULL;
+}
+
+struct mmap_file*_find_mmap_by_thread(struct thread *t) {
+  ASSERT (t != NULL);
+  lock_acquire(&_mmapLock);
+  struct list_elem *iter;
+  for (iter = list_begin(&_mmapList); iter != list_end(&_mmapList); iter = list_next(iter)) {
+    struct mmap_file *_mmap_file = list_entry(iter, struct mmap_file, elem);
+    if (_mmap_file->owner == t) {
+      lock_release(&_mmapLock);
+      return _mmap_file;
+    }
+  }
+
+  lock_release(&_mmapLock);
   return NULL;
 }
 

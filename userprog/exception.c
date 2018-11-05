@@ -147,13 +147,91 @@ static void page_fault (struct intr_frame *f) {
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-//  printf("In page fault\n PF_P: %d\n PF_W: %d\n PF_U: %d\n",not_present, write, user);
+  // @3.1.4.1 Typical Memory Layout
+
+ // printf("In page fault\n PF_P: %d\n PF_W: %d\n PF_U: %d...VADDR: %x\n",not_present, write, user, fault_addr);
+ // printf("Code segment: %x\n", f->cs);
   if (fault_addr == NULL                        ||
       (user && fault_addr >= (int *)0xC0000000) ||
-      fault_addr <= 0x08048000) {
+      fault_addr <= 0x08048000                  ||
+      // f->cs == SEL_UCSEG && write               ||
+      !not_present
+    ) {
     printf("%s: exit(-1)\n", thread_current()->name);
     thread_exit ();
   }
+
+  //804aa5b 8049165 804c5e4 80485f4
+  /*
+  + In page fault
+  +  PF_P: 1
+  +  PF_W: 0
+  +  PF_U: 1...VADDR: 80485f4
+  + Code segment: 1b
+  + In page fault
+  +  PF_P: 1
+  +  PF_W: 1
+  +  PF_U: 1...VADDR: 804c5e4
+  + Code segment: 1b
+  + In page fault
+  +  PF_P: 1
+  +  PF_W: 0
+  +  PF_U: 1...VADDR: 8049165
+  + Code segment: 1b
+  + In page fault
+  +  PF_P: 1
+  +  PF_W: 0
+  +  PF_U: 1...VADDR: 804aa5b
+  + Code segment: 1b
+
+  */
+
+  /* PT GROW STACK
+  In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 80485fc
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 1
+ PF_U: 1...VADDR: 804c604
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 804916d
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 804aa47
+  */
+
+  /*
+  Grow Stack
+  In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 8048720
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 1
+ PF_U: 1...VADDR: 804ca84
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 8049291
+Code segment: 1b
+In page fault
+ PF_P: 1
+ PF_W: 0
+ PF_U: 1...VADDR: 804aba8
+ */
+
+  // printf("Here! %x\n", fault_addr);
 
 #ifdef VM
   struct thread *t = thread_current();
