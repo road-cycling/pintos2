@@ -6,6 +6,7 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "threads/malloc.h"
+#include "threads/pte.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
 #include "userprog/syscall.h"
@@ -379,6 +380,18 @@ static int read(uint32_t *args) {
  struct file *fp = NULL;
  int bytes_read = 0;
 
+
+ // 
+ // printf("%%ESP: %x\n", thread_current()->stack);
+ // printf("Read called...address is: %x\n", buffer);
+ //
+ // uint32_t *pt = pagedir_get_page(thread_current()->pagedir, buffer);
+ //
+ // if (*pt & PTE_W == 0) {
+ //   printf("RO page\n");
+ // }
+
+
  if (!is_user_vaddr(buffer) || fd == 1 || fd == 2) {
    exit(NULL);
    thread_exit();
@@ -424,6 +437,8 @@ static int read(uint32_t *args) {
 
     return length_copy - length; //should be length
   } else {
+    //printf("Before PF\n");
+    // Hasnt Faulted Yet
     struct fileDescriptor *s_fd = getFD(fd, thread_current());
     if (s_fd == NULL) {
       lock_release(&fileSystemLock);
@@ -431,6 +446,7 @@ static int read(uint32_t *args) {
     }
     if (s_fd->mmap == NULL) {
       bytes_read = file_read(s_fd->file, buffer, (uint32_t) length);
+      //printf("No PF YET\n");
       lock_release(&fileSystemLock);
       return bytes_read;
     } else {
