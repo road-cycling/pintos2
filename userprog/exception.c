@@ -232,11 +232,11 @@ In page fault
   // printf("Here! %x\n", fault_addr);
 
 #ifdef VM
-  printf("In page fault\n PF_P: %d\n PF_W: %d\n PF_U: %d\nVADDR: %x\n f->esp: %x\n",not_present, write, user, fault_addr, f->esp);
+  // printf("In page fault\n PF_P: %d\n PF_W: %d\n PF_U: %d\nVADDR: %x\n f->esp: %x\n",not_present, write, user, fault_addr, f->esp);
   struct thread *t = thread_current();
   struct sPageTableEntry *spte = page_lookup(pg_round_down(fault_addr), &t->s_pte);
   if (!spte && ((f->esp - 32) <= fault_addr) /* && (fault_addr <= (f->esp + 4))*/) {
-    printf("Growing Stack\n");
+    //printf("Growing Stack\n");
     vm_grow_stack(fault_addr);
     return ;
   } else if (spte) {

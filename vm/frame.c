@@ -18,12 +18,14 @@
 
 static struct list frame_table;
 static struct lock frame_table_lock;
+static struct lock get_frame;
 
 static bool install_page (void *upage, void *kpage, bool writable);
 
 void frame_init(void) {
   list_init(&frame_table);
   lock_init(&frame_table_lock);
+  lock_init(&get_frame);
 }
 
 
@@ -159,16 +161,18 @@ struct mmap_file *_vm_malloc_mmap(void *vaddr_base, int fd, int pages_taken, str
 
 
 uint32_t *_vm_get_frame(enum palloc_flags flags) {
+  lock_acquire(&get_frame);
   uint32_t *kpage = palloc_get_page(flags);
 
   if (kpage == NULL) {
+    //printf("_vm_get_frame....evicting\n");
     _vm_evict_frame(NULL);
     kpage = palloc_get_page(flags);
     if (kpage == NULL)
       PANIC("RACE CONDITION\n");
   }
     //PANIC("YOU NEED TO IMPLEMENT EVICTION\n");
-
+  lock_release(&get_frame);
   return kpage;
 }
 
@@ -276,6 +280,7 @@ void _vm_write_back_to_disk(struct frame_table_entry *fte) {
 
 void _vm_write_back_to_file(struct frame_table_entry *fte) {
 
+  //printf("_vm_write_back_to_file..... thread_id: %d\n", thread_current()->tid);
   ASSERT (fte != NULL && fte->aux != NULL);
   ASSERT(pg_ofs(fte->frame) == 0);
   ASSERT(fte->aux->location & LOC_MMAP);
@@ -292,6 +297,8 @@ void _vm_write_back_to_file(struct frame_table_entry *fte) {
 
     printf("_vm_write_back_to_file ERROR... bytes_written: %d \t expected_written: %d\n", bytes_written, fte->aux->read_bytes);
   }
+
+  file_close(file);
 }
 
 //Implementing LRA (last recently added)
