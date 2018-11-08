@@ -203,18 +203,24 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) {
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
+
+  // inode   = 0xbff
+  // buffer_ = 0xdeadbeef
+  // size    = 1554
+  // offset  = 53
+
   while (size > 0) {
       /* Disk sector to read, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset);
-      int sector_ofs = offset % BLOCK_SECTOR_SIZE;
+      block_sector_t sector_idx = byte_to_sector (inode, offset);           // 1553 / 512 -> 3
+      int sector_ofs = offset % BLOCK_SECTOR_SIZE;                          // 53 % 512   -> 53
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
-      off_t inode_left = inode_length (inode) - offset;
-      int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
-      int min_left = inode_left < sector_left ? inode_left : sector_left;
+      off_t inode_left = inode_length (inode) - offset;                     //1800 - 53 = 1,747
+      int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;                     //512 - 53  = 459
+      int min_left = inode_left < sector_left ? inode_left : sector_left;   // 1747 < 459 ? 1747 : 459 -> 459
 
       /* Number of bytes to actually copy out of this sector. */
-      int chunk_size = size < min_left ? size : min_left;
+      int chunk_size = size < min_left ? size : min_left;                   //1554 < 459 ? 1554 : 459 -> 459
       if (chunk_size <= 0)
         break;
 
