@@ -74,9 +74,52 @@ inode_init (void)
 }
 
 /*
+Wires up the indirect pointers in struct inode.
+*/
+int inode_indirect_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
+  ASSERT(sectors_to_allocate >= 0);
+
+  size_t sectors_allocated = 0;
+  block_sector_t start;
+
+  int num_sectors_in_indirect = BLOCK_SECTOR_SIZE / 4; //(512 / sizeofint)
+  int num_sectors_to_allocate = (sectors_to_allocate / num_sectors_in_indirect > 0)
+                                        ? num_sectors_in_indirect
+                                        : sectors_to_allocate;
+
+  if (free_map_allocate(1, &start)) {
+    disk_inode->indirect_block_sector = start;
+  } else {
+    PANIC("No Space");
+  }
+
+
+  if (sectors_to_allocate == 0)
+    return 0;
+
+  int i = 0;
+
+  static char zeroes[BLOCK_SECTOR_SIZE];
+  void *indirect_block = malloc(BLOCK_SECTOR_SIZE);
+
+  for (; i < num_sectors_to_allocate; i++) {
+    if (free_map_allocate(1, &start)) {
+      memset(indirect_block + i * 4, start, 4);
+      sectors_allocated++;
+    } else {
+      PANIC("Out of Space");
+    }
+  }
+
+  block_write(fs_device, disk_inode->indirect_block_sector, indirect_block);
+  free(indirect_block);
+
+  return sectors_allocated;
+}
+
+
+/*
 Wires up the direct pointers in struct inode.
-
-
 */
 int inode_create_direct_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
 
@@ -114,7 +157,6 @@ int inode_create_direct_ptr(struct inode_disk *disk_inode, block_sector_t sector
 
   return sectors_allocated;
 }
-
 
 bool inode_create_nathan(block_sector_t sector, off_t length) {
   struct inode_disk *disk_inode = NULL;
