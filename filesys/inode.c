@@ -455,7 +455,7 @@ block_sector_t inode_offset_to_sector(struct inode_disk *inode_d, off_t current_
     return sector;
   }
 
-  return 0;
+  return -1;
 }
 
 /* Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
@@ -467,6 +467,38 @@ off_t inode_read_at_nathan (struct inode *inode, void *buffer_, off_t size, off_
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
+
+  while (size > 0) {
+    block_sector_t sector_idx = inode_offset_to_sector(inode->data, offset);
+    int sector_ofs = offset % BLOCK_SECTOR_SIZE;
+
+    off_t inode_left = inode_length (inode) - offset;
+    int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
+    int min_left = inode_left < sector_left ? inode_left : sector_left;
+
+    int chunk_size = size < min_left ? size : min_left;
+    if (chunk_size <= 0)
+      break;
+
+    if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE) {
+      block_read(fs_device, sector_idx, bytes_read);
+    } else {
+      if (bounce == NULL) {
+        bounce = malloc(BLOCK_SECTOR_SIZE);
+        if (bounce == NULL)
+          break;
+      }
+      block_read (fs_device, sector_idx, bounce);
+      memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);
+    }
+
+    size -= chunk_size;
+    offset += chunk_size;
+    bytes_read += chunk_size;
+  }
+
+  free (bounce);
+  return bytes_read;
 }
 
 
