@@ -105,18 +105,75 @@ int inode_double_indirect_ptr(struct inode_disk *disk_inode, block_sector_t sect
   if (sectors_to_allocate == 0)
     return 0;
 
+  size_t sectors_allocated = 0;
 
+  int num_double_indirect_sectors = DIV_ROUND_UP(sectors_to_allocate, 128);
+  inode_indirect_ptr(disk_inode, num_double_indirect_sectors, true, -1);
+  if (num_double_indirect_sectors != inode_indirect_ptr(disk_inode, num_double_indirect_sectors, true, -1))
+    PANIC("OUT OF DISK SPACE");
+
+  int i = 0;
+  void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
+  block_read(fs_device, disk_inode->double_indirect_block_sector, mock_sector);
+  int sector;
+  for (; i < num_double_indirect_sectors; i++) {
+    memcpy(&sector, mock_sector + i * sizeof(uint32_t), sizeof(uint32_t));
+
+    int sectors_to_alloc = sectors_to_allocate > 128 ? 128 : sectors_to_allocate;
+    sectors_allocated += inode_indirect_ptr(NULL, sectors_to_allocate, false, -1);
+  }
+
+  free(mock_sector);
+
+  return sectors_allocated;
 }
 
 
-int inode_indirect_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate, bool double_indirect) {
+int chunk_disk_sector_blocks(void *page, int num_to_allocate, int chunk_size) {
+
+  block_sector_t start;
+  size_t sectors_allocated = 0;
+  static char zeroes[BLOCK_SECTOR_SIZE];
+
+  while (sectors_allocated < num_to_allocate) {
+
+    if ((num_to_allocate - sectors_allocated) < chunk_size)
+      chunk_size = num_to_allocate - sectors_allocated;
+
+    if (free_map_allocate(chunk_size, &start)) {
+      int num_alloc = 0;
+      for (; num_alloc < chunk_size; num_alloc++) {
+        memset(page + sectors_allocated * sizeof(uint32_t), start + num_alloc, sizeof(uint32_t));
+        block_write(fs_disk, start + num_alloc, zeroes);
+        sectors_allocated++;
+      }
+    } else {
+      if (chunk_size == 1)
+        PANIC("OUT OF DISK SPACE");
+
+      if (chunk_size >= 100)
+        chunk_size -= 10;
+      else if (chunk_size >= 50)
+        chunk_size -= 5;
+      else if (chunk_size >= 25)
+        chunk_size -= 2;
+      else
+        chunk_size -= 1;
+    }
+  }
+
+  return sectors_allocated;
+}
+
+
+int inode_indirect_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate, bool double_indirect, int direct_sector) {
 
   ASSERT(sectors_to_allocate >= 0);
 
   if (sectors_to_allocate == 0)
     return 0;
 
-  size_t sectors_allocated = 0;
+  size_t sectors_allocated;
   block_sector_t start;
 
   int num_sectors_in_indirect = BLOCK_SECTOR_SIZE / 4; //(512 / sizeofint)
@@ -124,69 +181,40 @@ int inode_indirect_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_
                                         ? num_sectors_in_indirect
                                         : sectors_to_allocate;
 
-  if (free_map_allocate(1, &start)) {
+  if ((direct_sector >= 0) && free_map_allocate(1, &start)) {
     if (double_indirect)
       disk_inode->double_indirect_block_sector = start;
     else
       disk_inode->indirect_block_sector = start;
   } else {
-    PANIC("No Space");
+    PANIC("OUT OF DISK SPACE");
   }
 
-
-  int i = 0;
-  static char zeroes[BLOCK_SECTOR_SIZE];
   void *indirect_block = malloc(BLOCK_SECTOR_SIZE);
 
-  if (double_indirect) {
-    for (; i < num_sectors_to_allocate; i++) {
-      if (free_map_allocate(1, &start)) {
-        memset(indirect_block + i * 4, start, 4);
-        sectors_allocated++;
-      } else {
-        PANIC("Out of Space");
-      }
-    }
-  } else {
-    int chunk_size = 30;
-    int num_sector_request;
-    while (sectors_allocated < num_sectors_to_allocate) {
+  if (direct_sector >= 0) {
+    sectors_allocated = chunk_disk_sector_blocks(indirect_block, num_sectors_to_allocate, 50);
+    block_write(fs_device, direct_sector, indirect_block);
+  }
 
-      if (free_map_allocate(chunk_size, &start)) {
-        int num_alloc = 0;
-        for (; num_alloc < chunk_size; num_alloc++) {
-          memset(indirect_block + sectors_allocated * 4, start + num_alloc, 4);
-          sectors_allocated++;
-        }
-      } else {
-        if (chunk_size == 1)
-          PANIC("OUT OF MEMORY");
-
-        if ((num_sectors_to_allocate - sectors_allocated) >= chunk_size) {
-          num_sector_request = chunk_size;
-        } else if (chunk_size >= 15){
-          chunk_size -= 2;
-        } else {
-          chunk_size -= 1;
-        }
-
-        }
-      }
-    }
-
-  if (double_indirect)
+  else if (double_indirect) {
+    sectors_allocated = chunk_disk_sector_blocks(indirect_block, num_sectors_to_allocate, 1);
     block_write(fs_device, disk_inode->double_indirect_block_sector, indirect_block);
-  else
+  }
+  else {
+    sectors_allocated = chunk_disk_sector_blocks(indirect_block, num_sectors_to_allocate, 50);
     block_write(fs_device, disk_inode->indirect_block_sector, indirect_block);
+  }
+
   free(indirect_block);
 
   return sectors_allocated;
 }
 
+// https://www.youtube.com/watch?v=FBVITUka_30
+// Mozart Concerto D Minor K466 Freiburger Mozart-Orchester, Michael Erren,Valentina Lisitsa
 
-/*
-Wires up the direct pointers in struct inode.
-*/
+
 int inode_create_direct_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
 
   ASSERT(sectors_to_allocate >= 0);
@@ -197,7 +225,7 @@ int inode_create_direct_ptr(struct inode_disk *disk_inode, block_sector_t sector
   if (sectors_to_allocate == 0) /* This is ok */
     return 0;
 
-  int num_sectors_to_allocate = sectors_to_allocate / 10 > 0 ? 10 : sectors_to_allocate;
+  int num_sectors_to_allocate = (sectors_to_allocate / 10 > 0 ? 10) : sectors_to_allocate;
   //Try to allocate MAX or block of 10
 
   int i = 0;
@@ -209,7 +237,6 @@ int inode_create_direct_ptr(struct inode_disk *disk_inode, block_sector_t sector
       sectors_allocated++;
     }
   } else {
-    // bad
     for (i = 0; i < num_sectors_to_allocate; i++) {
       if (free_map_allocate(1, &start)) {
         disk_inode->direct_block_sectors[i] = start;
@@ -243,7 +270,7 @@ bool inode_create_nathan(block_sector_t sector, off_t length) {
     sectors -= sectors_allocated;
 
     if (sectors > 0) {
-      sectors_allocated = inode_indirect_ptr(disk_inode, sectors);
+      sectors_allocated = inode_indirect_ptr(disk_inode, sectors, 0);
       sectors -= sectors_allocated;
     }
 
@@ -258,6 +285,7 @@ bool inode_create_nathan(block_sector_t sector, off_t length) {
     success = true;
     free(disk_inode);
   }
+  
   return success;
 }
 
