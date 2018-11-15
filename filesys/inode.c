@@ -76,8 +76,45 @@ inode_init (void)
 /*
 Wires up the indirect pointers in struct inode.
 */
-int inode_indirect_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
+
+struct inode_disk {
+  uint32_t length;                        /* int32_t 4 Bytes */
+  uint32_t direct_block_sectors[10];      /* direct block */
+  uint32_t indirect_block;                /* indirect blocks */
+  uint32_t double_indirect_block;         /* dindirect blocks */
+  unsigned magic;                         /* magic - detect overflow */
+  uint32_t unused[114];                   /* pad to fit struct */
+};
+
+
+
+block_sector_t get_sector_from_offset_indirect(struct inode_disk *inode, off_t file_offset) {
+ASSERT (inode->length > file_offset);
+block_sector_t return_sector = 0;
+
+int sector_ofs = file_offset / 512; // What sequential sector number is this offset stored at
+int first_block = sector_ofs / 128; // Which block idx of the indirect_block_sector do we need to load
+int need_sector = sector_ofs % 128; // Which idx do we need to seek to inside of the first_block
+// int file_ofs = file_offset % 512    //Once we find the sector what file is the file offset ?
+
+}
+
+int inode_double_indirect_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
   ASSERT(sectors_to_allocate >= 0);
+
+  if (sectors_to_allocate == 0)
+    return 0;
+
+
+}
+
+
+int inode_indirect_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate, bool double_indirect) {
+
+  ASSERT(sectors_to_allocate >= 0);
+
+  if (sectors_to_allocate == 0)
+    return 0;
 
   size_t sectors_allocated = 0;
   block_sector_t start;
@@ -88,30 +125,59 @@ int inode_indirect_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_
                                         : sectors_to_allocate;
 
   if (free_map_allocate(1, &start)) {
-    disk_inode->indirect_block_sector = start;
+    if (double_indirect)
+      disk_inode->double_indirect_block_sector = start;
+    else
+      disk_inode->indirect_block_sector = start;
   } else {
     PANIC("No Space");
   }
 
 
-  if (sectors_to_allocate == 0)
-    return 0;
-
   int i = 0;
-
   static char zeroes[BLOCK_SECTOR_SIZE];
   void *indirect_block = malloc(BLOCK_SECTOR_SIZE);
 
-  for (; i < num_sectors_to_allocate; i++) {
-    if (free_map_allocate(1, &start)) {
-      memset(indirect_block + i * 4, start, 4);
-      sectors_allocated++;
-    } else {
-      PANIC("Out of Space");
+  if (double_indirect) {
+    for (; i < num_sectors_to_allocate; i++) {
+      if (free_map_allocate(1, &start)) {
+        memset(indirect_block + i * 4, start, 4);
+        sectors_allocated++;
+      } else {
+        PANIC("Out of Space");
+      }
     }
-  }
+  } else {
+    int chunk_size = 30;
+    int num_sector_request;
+    while (sectors_allocated < num_sectors_to_allocate) {
 
-  block_write(fs_device, disk_inode->indirect_block_sector, indirect_block);
+      if (free_map_allocate(chunk_size, &start)) {
+        int num_alloc = 0;
+        for (; num_alloc < chunk_size; num_alloc++) {
+          memset(indirect_block + sectors_allocated * 4, start + num_alloc, 4);
+          sectors_allocated++;
+        }
+      } else {
+        if (chunk_size == 1)
+          PANIC("OUT OF MEMORY");
+
+        if ((num_sectors_to_allocate - sectors_allocated) >= chunk_size) {
+          num_sector_request = chunk_size;
+        } else if (chunk_size >= 15){
+          chunk_size -= 2;
+        } else {
+          chunk_size -= 1;
+        }
+
+        }
+      }
+    }
+
+  if (double_indirect)
+    block_write(fs_device, disk_inode->double_indirect_block_sector, indirect_block);
+  else
+    block_write(fs_device, disk_inode->indirect_block_sector, indirect_block);
   free(indirect_block);
 
   return sectors_allocated;
@@ -162,7 +228,7 @@ bool inode_create_nathan(block_sector_t sector, off_t length) {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
-  ASSERT (length >= 0);
+  ASSERT (length >= 0 && length < 8388608);
   ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
 
   disk_inode = calloc(1, sizeof *disk_inode);
@@ -172,21 +238,25 @@ bool inode_create_nathan(block_sector_t sector, off_t length) {
     block_sector_t start;
     disk_inode->length = length;
     disk_inode->magic = INODE_MAGIC;
-    size_t i = 0;
 
-    if (sectors >= 10) {
-      if (free_map_allocate(sectors % 10, &start)) {
-        block_write (fs_device, sector, disk_inode);
-        if (sectors > 0) {
-          static char zeroes[BLOCK_SECTOR_SIZE];
-          for (i = 0; i < sectors % 10; i++)
-            block_write(fs_device, start + i, zeroes);
-            sectors_allocated++;
-        }
-        success = true;
-      }
-      free(disk_inode);
+    sectors_allocated = inode_create_direct_ptr(disk_inode, sectors);
+    sectors -= sectors_allocated;
+
+    if (sectors > 0) {
+      sectors_allocated = inode_indirect_ptr(disk_inode, sectors);
+      sectors -= sectors_allocated;
     }
+
+    if (sectors > 0) {
+      sectors_allocated = inode_double_indirect_ptr(disk_inode, sectors);
+      sectors -= sectors_allocated;
+    }
+
+    ASSERT (sectors == 0);
+
+    block_write(fs_device, sector, disk_inode);
+    success = true;
+    free(disk_inode);
   }
   return success;
 }
@@ -328,27 +398,6 @@ inode_remove (struct inode *inode)
    Returns the number of bytes actually read, which may be less
    than SIZE if an error occurs or end of file is reached. */
 
-   struct inode_disk {
-     uint32_t length;                        /* int32_t 4 Bytes */
-     uint32_t direct_block_sectors[10];      /* direct block */
-     uint32_t indirect_block;                /* indirect blocks */
-     uint32_t double_indirect_block;         /* dindirect blocks */
-     unsigned magic;                         /* magic - detect overflow */
-     uint32_t unused[114];                   /* pad to fit struct */
-   };
-
-
-
-block_sector_t get_sector_from_offset_indirect(struct inode_disk *inode, off_t file_offset) {
-  ASSERT (inode->length > file_offset);
-  block_sector_t return_sector = 0;
-
-  int sector_ofs = file_offset / 512; // What sequential sector number is this offset stored at
-  int first_block = sector_ofs / 128; // Which block idx of the indirect_block_sector do we need to load
-  int need_sector = sector_ofs % 128; // Which idx do we need to seek to inside of the first_block
-  // int file_ofs = file_offset % 512    //Once we find the sector what file is the file offset ?
-
-}
 
 off_t inode_read_at_nathan (struct inode *inode, void *buffer_, off_t size, off_t offset) {
   uint8_t *buffer = buffer_;
