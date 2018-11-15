@@ -234,3 +234,73 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
     }
   return false;
 }
+
+
+
+// CREATE KEYSPACE IF NOT EXISTS instagram WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor' : 3}
+//
+// CREATE TABLE IF NOT EXISTS instagram.user (
+//   user_id uuid,
+//   username text,
+//   email text,
+//   password text,
+//   creation_date timestamp,
+//   PRIMARY KEY (user_id)
+//  );
+//
+//
+// // Subscribe Tag
+// CREATE TABLE IF NOT EXISTS instagram.subscribe_to_tag (
+//   user_id uuid,
+//   tag text,
+//   subscribe_date timstamp,
+//   PRIMARY KEY (user_id, subscribe_date)
+// ) WITH CLUSTERING ORDER BY (subscribe_date DESC);
+//
+// CREATE TABLE IF NOT EXISTS instagram.tag_subscribers (
+//   user_id uuid,
+//   tag text
+//   PRIMARY KEY (tag)
+// );
+
+
+// // Subscribe User
+// CREATE TABLE IF NOT EXISTS instagram.follows (
+//   user_id uuid,
+//   follows uuid,
+//   follow_date timestamp,
+//   PRIMARY KEY (user_id, follow_date)
+// ) WITH CLUSTERING ORDER BY (follow_date DESC);
+//
+// CREATE TABLE IF NOT EXISTS instagram.followed_by (
+//   user_id uuid,
+//   followed_by uuid,
+//   follow_date timestamp,
+//   PRIMARY KEY (user_id, follow_date)
+// ) WITH CLUSTERING ORDER BY (follow_date DESC);
+//
+// //User Post -> once the post has been inserted in this table for the poster, we will publish it to a kafka topic and return status successful
+// //Kafka will take the post - look at the users followers / of the poster and publish it to their timelines
+//  CREATE TABLE IF NOT EXISTS instagram.user_post (
+//    user_id uuid,
+//    post_id timeuuid,
+//    tag text,
+//    caption text,
+//    PRIMARY KEY (user_id, post_id)
+//  ) WITH CLUSTERING ORDER BY (post_id DESC);
+//
+//
+// CREATE TABLE IF NOT EXISTS instagram.user_post_comment (
+//   user_id uuid,
+//   post_id timeuuid,
+//   comment text,
+//   PRIMARY KEY (user_id, post_id)
+// ) WITH CLUSTERING ORDER BY (post_id DESC);
+//
+// CREATE TABLE IF NOT EXISTS instagram.user_post_timeline (
+//   user_id uuid,
+//   post_id timeuuid,
+//   caption text,
+//   month text,
+//   PRIMARY KEY ((user_id, month) post_id)
+// ) WITH CLUSTERING ORDER BY (post_id DESC);
