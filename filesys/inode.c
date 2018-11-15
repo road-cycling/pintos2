@@ -421,9 +421,27 @@ int release_direct_block(struct inode *inode, int sectors_to_clear) {
   }
 }
 
-int release_block(struct inode *inode, int sectors_to_clear) {
+//max in block is 128
+// void * memcpy ( void * destination, const void * source, size_t num );
+int release_block(block_sector_t sector, int sectors_to_clear) {
   if (sectors_to_clear == 0 || inode == NULL)
     return 0;
+
+  void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
+
+  if (mock_sector == NULL)
+    PANIC("int release_block(%d, %d) - malloc(%d) == NULLPTR\n", sector, sectors_to_clear, BLOCK_SECTOR_SIZE);
+
+  block_read(fs_device, sector, mock_sector);
+
+  int sectors_cleared = 0;
+  block_sector_t sector;
+  while (sectors_cleared < 128 && sectors_to_clear > sectors_cleared) {
+    memcpy(&sector, mock_sector + sectors_cleared * sizeof(uint32_t), sizeof(uint32_t));
+    sectors_cleared++;
+  }
+
+  return sectors_to_clear - sectors_cleared;
 }
 
 /* Closes INODE and writes it to disk.
