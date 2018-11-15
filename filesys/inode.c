@@ -373,19 +373,6 @@ inode_get_inumber (const struct inode *inode)
   return inode->sector;
 }
 
-void inode_close_new (struct inode *inode, bool zero) {
-  if (inode == NULL)
-    return;
-
-  if (--inode->open_cnt == 0) {
-    list_remove(&inode->elem);
-
-    if (inode->removed) {
-      int num_sectors_to_free = bytes_to_sectors(inode->data.length);
-    }
-  }
-}
-
 bool is_direct_block_sequential(struct inode *inode, int num_to_free_capped) {
   if (num_to_free_capped == 0)
     return false;
@@ -421,10 +408,40 @@ int release_direct_block(struct inode *inode, int sectors_to_clear) {
   }
 }
 
+int release_indirect_block(struct inode *inode, int sectors_to_clear) {
+  if (sectors_to_clear == 0 || inode == NULL)
+    return 0;
+
+  return release_block(inode->data->indirect_block_sector, sectors_to_clear);
+}
+
+int release_double_indirect_block(struct inode *inode, int sectors_to_clear) {
+  if (sectors_to_clear == 0 || inode == null)
+    return 0;
+
+  void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
+
+  if (mock_sector == NULL)
+    PANIC("int release_double_indirect_block(%x, %d) - malloc(%d) == NULLPTR\n", inode, sectors_to_clear, BLOCK_SECTOR_SIZE);
+
+  block_sector_t sector;
+  // int sectors_left_to_clear =
+  block_read(fs_device, inode->data->double_indirect_block_sector, mock);
+
+  int i = 0;
+  int sectors_to_free = DIV_ROUND_UP(sectors_to_clear, 128);
+  for (; i < sectors_to_free; i++) {
+    memcpy(&sector, mock_sector + i * sizeof(uint32_t), sizeof(uint32_t));
+    sectors_to_clear = release_block(sector, sectors_to_clear);
+    free_map_release(sector, 1);
+  }
+
+}
+
 //max in block is 128
 // void * memcpy ( void * destination, const void * source, size_t num );
 int release_block(block_sector_t sector, int sectors_to_clear) {
-  if (sectors_to_clear == 0 || inode == NULL)
+  if (sectors_to_clear == 0)
     return 0;
 
   void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
@@ -438,6 +455,7 @@ int release_block(block_sector_t sector, int sectors_to_clear) {
   block_sector_t sector;
   while (sectors_cleared < 128 && sectors_to_clear > sectors_cleared) {
     memcpy(&sector, mock_sector + sectors_cleared * sizeof(uint32_t), sizeof(uint32_t));
+    free_map_release(sector, 1);
     sectors_cleared++;
   }
 
@@ -447,8 +465,7 @@ int release_block(block_sector_t sector, int sectors_to_clear) {
 /* Closes INODE and writes it to disk.
    If this was the last reference to INODE, frees its memory.
    If INODE was also a removed inode, frees its blocks. */
-void
-inode_close (struct inode *inode)
+void inode_close (struct inode *inode)
 {
   /* Ignore null pointer. */
   if (inode == NULL)
@@ -472,17 +489,45 @@ inode_close (struct inode *inode)
     }
 }
 
+
+void inode_close_new (struct inode *inode, bool zero) {
+  if (inode == NULL)
+    return;
+
+  if (--inode->open_cnt == 0) {
+    list_remove(&inode->elem);
+
+    if (inode->removed) {
+      int num_sectors_to_free = bytes_to_sectors(inode->data.length);
+
+      num_sectors_to_free = release_direct_block(inode, num_sectors_to_free);
+
+      if (num_sectors_to_free > 0)
+        num_sectors_to_free = release_indirect_block(inode, num_sectors_to_free);
+
+      if (num_sectors_to_free > 0)
+        num_sectors_to_free = release_double_indirect_block(inode, num_sectors_to_free);
+
+      ASSERT(num_sectors_to_free == 0);
+
+      free_map_release(inode->sector, 1);
+    }
+    free(inode);
+  }
+}
+
 /* Marks INODE to be deleted when it is closed by the last caller who
    has it open. */
 void
-inode_remove (struct inode *inode)
-{
+inode_remove (struct inode *inode) {
   ASSERT (inode != NULL);
   inode->removed = true;
 }
 
 
 block_sector_t inode_offset_to_sector(struct inode_disk *inode_d, off_t current_offset) {
+
+  ASSERT(inode_d->sectors_alloc * 512 >= current_offset);
 
   off_t sector_count = DIV_ROUND_UP(current_offset, BLOCK_SECTOR_SIZE);
 
