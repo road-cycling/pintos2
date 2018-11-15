@@ -87,7 +87,6 @@ struct inode_disk {
 };
 
 
-
 block_sector_t get_sector_from_offset_indirect(struct inode_disk *inode, off_t file_offset) {
 ASSERT (inode->length > file_offset);
 block_sector_t return_sector = 0;
@@ -285,7 +284,7 @@ bool inode_create_nathan(block_sector_t sector, off_t length) {
     success = true;
     free(disk_inode);
   }
-  
+
   return success;
 }
 
@@ -420,6 +419,43 @@ inode_remove (struct inode *inode)
 {
   ASSERT (inode != NULL);
   inode->removed = true;
+}
+
+
+block_sector_t inode_offset_to_sector(struct inode_disk *inode_d, off_t current_offset) {
+
+  off_t sector_count = DIV_ROUND_UP(current_offset, BLOCK_SECTOR_SIZE);
+
+  if (sector_count >= 1 && sector_count <= 10)
+    return inode_d->direct_block_sectors[sector_count - 1];
+
+  sector_count -= 10;
+
+  void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
+  if (sector_count >= 1 && sector_count <= 128) {
+    block_sector_t sector;
+    block_read(fs_device, inode_d->indirect_block_sector, mock_sector);
+    memcpy(&sector, mock_sector + sizeof(uint32_t) * (sector_count - 1), sizeof(uint32_t));
+    free(mock_sector);
+    return sector;
+  }
+  sector_count -= 128;
+
+  if (sector_count >= 1 && sector_count <= 16384) { /* 128 * 128 */
+    int indirect_sector = (sector_count - 1) / 128;
+    block_sector_t sector;
+    block_read(fs_device, inode_d->double_indirect_block_sector, mock_sector);
+    memcpy(&sector, mock_sector + sizeof(uint32_t) * (sector_count - 1), sizeof(uint32_t));
+    block_read(fs_device, sector, mock_sector);
+
+    int pos = (sector_count - 1) % BLOCK_SECTOR_SIZE;
+    memcpy(&sector, mock_sector + sizeof(uint32_t) * pos, sizeof(uint32_t));
+
+    free(mock_sector);
+    return sector;
+  }
+
+  return 0;
 }
 
 /* Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
