@@ -73,11 +73,48 @@ inode_init (void)
   list_init (&open_inodes);
 }
 
-/* Initializes an inode with LENGTH bytes of data and
-   writes the new inode to sector SECTOR on the file system
-   device.
-   Returns true if successful.
-   Returns false if memory or disk allocation fails. */
+/*
+Wires up the direct pointers in struct inode.
+
+
+*/
+int inode_create_direct_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
+
+  ASSERT(sectors_to_allocate >= 0);
+
+  size_t sectors_allocated = 0;
+  block_sector_t start;
+
+  if (sectors_to_allocate == 0) /* This is ok */
+    return 0;
+
+  int num_sectors_to_allocate = sectors_to_allocate / 10 > 0 ? 10 : sectors_to_allocate;
+  //Try to allocate MAX or block of 10
+
+  int i = 0;
+  static char zeroes[BLOCK_SECTOR_SIZE];
+  if (free_map_allocate(num_sectors_to_allocate, &start)) {
+    for (; i < num_sectors_to_allocate; i++) {
+      disk_inode->direct_block_sectors[i] = start + i;
+      block_write(fs_device, start + i, zeroes);
+      sectors_allocated++;
+    }
+  } else {
+    // bad
+    for (i = 0; i < num_sectors_to_allocate; i++) {
+      if (free_map_allocate(1, &start)) {
+        disk_inode->direct_block_sectors[i] = start;
+        block_write(fs_device, start, zeroes);
+        sectors_allocated++;
+      } else {
+        PANIC("OUT OF FILE SPACE\n");
+      }
+    }
+  }
+
+  return sectors_allocated;
+}
+
 
 bool inode_create_nathan(block_sector_t sector, off_t length) {
   struct inode_disk *disk_inode = NULL;
@@ -112,6 +149,12 @@ bool inode_create_nathan(block_sector_t sector, off_t length) {
   return success;
 }
 
+
+/* Initializes an inode with LENGTH bytes of data and
+   writes the new inode to sector SECTOR on the file system
+   device.
+   Returns true if successful.
+   Returns false if memory or disk allocation fails. */
 
 
 bool
