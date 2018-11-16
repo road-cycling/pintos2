@@ -86,6 +86,38 @@ struct inode_disk {
   uint32_t unused[114];                   /* pad to fit struct */
 };
 
+bool extend_inode_direct(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
+  ASSERT(disk_inode != NULL);
+  ASSERT(disk_inode->sec_alloc < 10);
+
+  int blocks_allocated = 0;
+  int direct_block_start = disk_inode->/*sec_alloc*/;
+
+  int max_alloc = 10 - direct_block_start;
+  int num_alloc = max_alloc > sectors_to_allocate ? sectors_to_allocate : max_alloc;
+
+  block_sector_t start;
+
+  int i = 0;
+  if (free_map_allocate(num_alloc, &start)) {
+    for (; i < num_alloc; i++) {
+      disk_inode->direct_block_sectors[i] = start + i;
+      blocks_allocated++;
+    }
+  } else {
+    for (i = direct_block_start; i < direct_block_start + num_alloc; i++) {
+      if (free_map_allocate(1, &start)) {
+        disk_inode->direct_block_sectors[i] = start;
+        blocks_allocated++;
+      } else {
+        PANIC("OUT OF FILE SPACE\n");
+      }
+    }
+  }
+
+  return sectors_to_allocate - blocks_allocated;
+}
+
 
 int inode_double_indirect_ptr(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
   ASSERT(sectors_to_allocate >= 0);
@@ -285,9 +317,7 @@ bool inode_create_nathan(block_sector_t sector, off_t length) {
    Returns false if memory or disk allocation fails. */
 
 
-bool
-inode_create (block_sector_t sector, off_t length)
-{
+bool inode_create (block_sector_t sector, off_t length) {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -324,9 +354,7 @@ inode_create (block_sector_t sector, off_t length)
 /* Reads an inode from SECTOR
    and returns a `struct inode' that contains it.
    Returns a null pointer if memory allocation fails. */
-struct inode *
-inode_open (block_sector_t sector)
-{
+struct inode *inode_open (block_sector_t sector) {
   struct list_elem *e;
   struct inode *inode;
 
@@ -367,9 +395,7 @@ inode_reopen (struct inode *inode)
 }
 
 /* Returns INODE's inode number. */
-block_sector_t
-inode_get_inumber (const struct inode *inode)
-{
+block_sector_t inode_get_inumber (const struct inode *inode) {
   return inode->sector;
 }
 
