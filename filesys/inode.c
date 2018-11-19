@@ -86,7 +86,146 @@ struct inode_disk {
   uint32_t unused[114];                   /* pad to fit struct */
 };
 
-bool extend_inode_direct(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
+
+int extend_inode_direct_new(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
+
+    ASSERT(disk_inode != NULL);
+    ASSERT(disk_inode->sectors_allocated < 10);
+
+    if (sectors_to_allocate == 0)
+      return 0;
+
+    int max_direct_we_can_allocate = 10 - disk_inode->sectors_allocated;
+    int count_direct_blocks_to_allocate = sectors_to_allocate > max_direct_we_can_allocate
+                                          ? max_direct_we_can_allocate
+                                          : sectors_to_allocate;
+
+    block_sector_t start;
+
+    int i = 0;
+    if (free_map_allocate(count_direct_blocks_to_allocate, &start)) {
+      for (; i < count_direct_blocks_to_allocate; i++)
+        disk_inode->direct_block_sectors[i + disk_inode->sectors_allocated] = i + start;
+      goto done;
+    } else {
+      for (; i < count_direct_blocks_to_allocate; i++) {
+        if (free_map_allocate(1, &start)) {
+          disk_inode->direct_block_sectors[i + disk_inode->sectors_allocated] = start;
+        } else {
+          PANIC("OUT OF FILE SPACE\n");
+        }
+      }
+      goto done;
+    }
+
+  done:
+    disk_inode->sectors_allocated += count_direct_blocks_to_allocate;
+    return sectors_to_allocate - count_direct_blocks_to_allocate;
+}
+
+int extend_inode_indirect_new(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
+
+  ASSERT(disk_inode != NULL);
+  ASSERT(disk_inode->sectors_allocated > 10);
+
+  int indirect_blocks_allocated = disk_inode->sectors_allocated - 10;
+  int indirect_blocks_unallocated = 128 - indirect_blocks_allocated;
+
+  int indirect_blocks_to_allocate = sectors_to_allocate > indirect_blocks_unallocated
+                                      ? indirect_blocks_unallocated
+                                      : sectors_to_allocate;
+
+  block_sector_t start;
+  int i = 0;
+
+  void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
+
+  if (indirect_blocks_allocated != 0)
+    block_read(fs_device, disk_inode->double_indirect_block_sector, mock_sector);
+
+  //This function panic's to the kernel if not successful. We can assume it works
+  chunk_sector_blocks_new(mock_sector, indirect_blocks_to_allocate, indirect_blocks_to_allocate, indirect_blocks_allocated);
+
+  disk_inode->sectors_allocated += indirect_blocks_to_allocate;
+  return sectors_to_allocate - indirect_blocks_to_allocate;
+}
+
+
+int chunk_sector_blocks_new(void *page, int num_to_allocate, int chunk_size, int start_idx) {
+
+  ASSERT((num_to_allocate + start_idx) < 128);
+  block_sector_t start;
+  int sectors_allocated = 0;
+
+  while (sectors_allocated < num_to_allocate) {
+
+    int sectors_left_to_allocate = num_to_allocate - sectors_allocated;
+
+    if (sectors_left_to_allocate < chunk_size)
+      chunk_size = sectors_left_to_allocate;
+
+    if (free_map_allocate(chunk_size, &start)) {
+      int i = 0;
+      for (; i < chunk_size; i++) {
+        int page_idx = sectors_allocated + start_idx;
+        memset(page + page_idx * sizeof(uint32_t), start + i, sizeof(uint32_t));
+        sectors_allocated++;
+      }
+    } else {
+      if (chunk_size == 1)
+        PANIC("OUT OF DISK SPACE");
+
+      if (chunk_size >= 100)
+        chunk_size -= 10;
+      else if (chunk_size >= 50)
+        chunk_size -= 5;
+      else if (chunk_size >= 25)
+        chunk_size -= 2;
+      else
+        chunk_size -= 1;
+    }
+  }
+  return sectors_allocated;
+}
+
+int chunk_disk_sector_blocks(void *page, int num_to_allocate, int chunk_size) {
+
+  block_sector_t start;
+  size_t sectors_allocated = 0;
+  static char zeroes[BLOCK_SECTOR_SIZE];
+
+  while (sectors_allocated < num_to_allocate) {
+
+    if ((num_to_allocate - sectors_allocated) < chunk_size)
+      chunk_size = num_to_allocate - sectors_allocated;
+
+    if (free_map_allocate(chunk_size, &start)) {
+      int num_alloc = 0;
+      for (; num_alloc < chunk_size; num_alloc++) {
+        memset(page + sectors_allocated * sizeof(uint32_t), start + num_alloc, sizeof(uint32_t));
+        block_write(fs_disk, start + num_alloc, zeroes);
+        sectors_allocated++;
+      }
+    } else {
+      if (chunk_size == 1)
+        PANIC("OUT OF DISK SPACE");
+
+      if (chunk_size >= 100)
+        chunk_size -= 10;
+      else if (chunk_size >= 50)
+        chunk_size -= 5;
+      else if (chunk_size >= 25)
+        chunk_size -= 2;
+      else
+        chunk_size -= 1;
+    }
+  }
+
+  return sectors_allocated;
+}
+
+// Duplicated Code -> lots of it
+int extend_inode_direct(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
   ASSERT(disk_inode != NULL);
   ASSERT(disk_inode->sec_alloc < 10);
 
@@ -116,6 +255,29 @@ bool extend_inode_direct(struct inode_disk *disk_inode, block_sector_t sectors_t
   }
 
   return sectors_to_allocate - blocks_allocated;
+}
+
+int extend_inode_indirect(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
+  ASSERT(disk_inode != NULL);
+
+  int blocks_allocated = 0;
+  block_sector_t start;
+  int indirect_sector = disk_inode->sec_alloc - 10;
+  int indirect_sectors_to_allocate = ((128 - indirect_sector) > sectors_to_allocate) ? sectors_to_allocate : 128 - indirect_sector;
+
+  int i = indirect_sector;
+
+  if (free_map_allocate(indirect_sectors_to_allocate, &start)) {
+    for (; i < indirect_sectors_to_allocate + indirect_sector; i++)
+  }
+
+  for (i; i < indirect_sectors_to_allocate + indirect_sector; i++) {
+    free_map_allocate()
+  }
+
+  // foo bar
+  void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
+  block_read(fs_device, disk_inode->indirect_block_sector, mock_sector);
 }
 
 
