@@ -310,7 +310,7 @@ int release_block(block_sector_t sector_to_release, int sectors_to_clear) {
   if (sectors_to_clear == 0)
     return 0;
 
-  void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
+  uint32_t *mock_sector = malloc(BLOCK_SECTOR_SIZE);
 
   if (mock_sector == NULL)
     PANIC("int release_block(%d, %d) - malloc(%d) == NULLPTR\n", sector_to_release, sectors_to_clear, BLOCK_SECTOR_SIZE);
@@ -320,7 +320,8 @@ int release_block(block_sector_t sector_to_release, int sectors_to_clear) {
   int sectors_cleared = 0;
   block_sector_t sector;
   while (sectors_cleared < 128 && sectors_to_clear > sectors_cleared) {
-    memcpy(&sector, mock_sector + sectors_cleared * sizeof(uint32_t), sizeof(uint32_t));
+    // memcpy(&sector, mock_sector + sectors_cleared * sizeof(uint32_t), sizeof(uint32_t));
+    sector = mock_sector[sectors_cleared];
     free_map_release(sector, 1);
     sectors_cleared++;
   }
@@ -626,7 +627,7 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
       /* Sector to write, starting byte offset within sector. */
 #ifdef FILESYS
       block_sector_t sector_idx = inode_offset_to_sector(&inode->data, offset);
-      printf("sector_idx: %d\n", sector_idx);
+      // printf("sector_idx: %d\n", sector_idx);
 #else
       block_sector_t sector_idx = byte_to_sector (inode, offset);
 #endif
