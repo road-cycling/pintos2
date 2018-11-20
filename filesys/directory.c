@@ -7,19 +7,19 @@
 #include "threads/malloc.h"
 
 /* A directory. */
-struct dir 
+struct dir
   {
     struct inode *inode;                /* Backing store. */
     off_t pos;                          /* Current position. */
   };
 
 /* A single directory entry. */
-struct dir_entry 
+struct dir_entry
   {
     block_sector_t inode_sector;        /* Sector number of header. */
     char name[NAME_MAX + 1];            /* Null terminated file name. */
     bool in_use;                        /* In use or free? */
-  };
+  }; // @ size 20B called entry_cnt @ 16 -> 320B (?)
 
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
@@ -32,7 +32,7 @@ dir_create (block_sector_t sector, size_t entry_cnt)
 /* Opens and returns the directory for the given INODE, of which
    it takes ownership.  Returns a null pointer on failure. */
 struct dir *
-dir_open (struct inode *inode) 
+dir_open (struct inode *inode)
 {
   struct dir *dir = calloc (1, sizeof *dir);
   if (inode != NULL && dir != NULL)
@@ -45,7 +45,7 @@ dir_open (struct inode *inode)
     {
       inode_close (inode);
       free (dir);
-      return NULL; 
+      return NULL;
     }
 }
 
@@ -60,14 +60,14 @@ dir_open_root (void)
 /* Opens and returns a new directory for the same inode as DIR.
    Returns a null pointer on failure. */
 struct dir *
-dir_reopen (struct dir *dir) 
+dir_reopen (struct dir *dir)
 {
   return dir_open (inode_reopen (dir->inode));
 }
 
 /* Destroys DIR and frees associated resources. */
 void
-dir_close (struct dir *dir) 
+dir_close (struct dir *dir)
 {
   if (dir != NULL)
     {
@@ -78,7 +78,7 @@ dir_close (struct dir *dir)
 
 /* Returns the inode encapsulated by DIR. */
 struct inode *
-dir_get_inode (struct dir *dir) 
+dir_get_inode (struct dir *dir)
 {
   return dir->inode;
 }
@@ -90,17 +90,17 @@ dir_get_inode (struct dir *dir)
    otherwise, returns false and ignores EP and OFSP. */
 static bool
 lookup (const struct dir *dir, const char *name,
-        struct dir_entry *ep, off_t *ofsp) 
+        struct dir_entry *ep, off_t *ofsp)
 {
   struct dir_entry e;
   size_t ofs;
-  
+
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
-       ofs += sizeof e) 
-    if (e.in_use && !strcmp (name, e.name)) 
+       ofs += sizeof e)
+    if (e.in_use && !strcmp (name, e.name))
       {
         if (ep != NULL)
           *ep = e;
@@ -117,7 +117,7 @@ lookup (const struct dir *dir, const char *name,
    a null pointer.  The caller must close *INODE. */
 bool
 dir_lookup (const struct dir *dir, const char *name,
-            struct inode **inode) 
+            struct inode **inode)
 {
   struct dir_entry e;
 
@@ -159,12 +159,12 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
      current end-of-file.
-     
+
      inode_read_at() will only return a short read at end of file.
      Otherwise, we'd need to verify that we didn't get a short
      read due to something intermittent such as low memory. */
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
-       ofs += sizeof e) 
+       ofs += sizeof e)
     if (!e.in_use)
       break;
 
@@ -182,7 +182,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
    Returns true if successful, false on failure,
    which occurs only if there is no file with the given NAME. */
 bool
-dir_remove (struct dir *dir, const char *name) 
+dir_remove (struct dir *dir, const char *name)
 {
   struct dir_entry e;
   struct inode *inode = NULL;
@@ -203,7 +203,7 @@ dir_remove (struct dir *dir, const char *name)
 
   /* Erase directory entry. */
   e.in_use = false;
-  if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
+  if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e)
     goto done;
 
   /* Remove inode. */
@@ -223,14 +223,84 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
 
-  while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
+  while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e)
     {
       dir->pos += sizeof e;
       if (e.in_use)
         {
           strlcpy (name, e.name, NAME_MAX + 1);
           return true;
-        } 
+        }
     }
   return false;
 }
+
+
+
+// CREATE KEYSPACE IF NOT EXISTS instagram WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor' : 3}
+//
+// CREATE TABLE IF NOT EXISTS instagram.user (
+//   user_id uuid,
+//   username text,
+//   email text,
+//   password text,
+//   creation_date timestamp,
+//   PRIMARY KEY (user_id)
+//  );
+//
+//
+// // Subscribe Tag
+// CREATE TABLE IF NOT EXISTS instagram.subscribe_to_tag (
+//   user_id uuid,
+//   tag text,
+//   subscribe_date timstamp,
+//   PRIMARY KEY (user_id, subscribe_date)
+// ) WITH CLUSTERING ORDER BY (subscribe_date DESC);
+//
+// CREATE TABLE IF NOT EXISTS instagram.tag_subscribers (
+//   user_id uuid,
+//   tag text
+//   PRIMARY KEY (tag)
+// );
+
+
+// // Subscribe User
+// CREATE TABLE IF NOT EXISTS instagram.follows (
+//   user_id uuid,
+//   follows uuid,
+//   follow_date timestamp,
+//   PRIMARY KEY (user_id, follow_date)
+// ) WITH CLUSTERING ORDER BY (follow_date DESC);
+//
+// CREATE TABLE IF NOT EXISTS instagram.followed_by (
+//   user_id uuid,
+//   followed_by uuid,
+//   follow_date timestamp,
+//   PRIMARY KEY (user_id, follow_date)
+// ) WITH CLUSTERING ORDER BY (follow_date DESC);
+//
+// //User Post -> once the post has been inserted in this table for the poster, we will publish it to a kafka topic and return status successful
+// //Kafka will take the post - look at the users followers / of the poster and publish it to their timelines
+//  CREATE TABLE IF NOT EXISTS instagram.user_post (
+//    user_id uuid,
+//    post_id timeuuid,
+//    tag text,
+//    caption text,
+//    PRIMARY KEY (user_id, post_id)
+//  ) WITH CLUSTERING ORDER BY (post_id DESC);
+//
+//
+// CREATE TABLE IF NOT EXISTS instagram.user_post_comment (
+//   user_id uuid,
+//   post_id timeuuid,
+//   comment text,
+//   PRIMARY KEY (user_id, post_id)
+// ) WITH CLUSTERING ORDER BY (post_id DESC);
+//
+// CREATE TABLE IF NOT EXISTS instagram.user_post_timeline (
+//   user_id uuid,
+//   post_id timeuuid,
+//   caption text,
+//   month text,
+//   PRIMARY KEY ((user_id, month) post_id)
+// ) WITH CLUSTERING ORDER BY (post_id DESC);
