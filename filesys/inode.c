@@ -93,6 +93,8 @@ int extend_inode_direct(struct inode_disk *disk_inode, block_sector_t sectors_to
 
 int extend_inode_indirect(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
 
+  printf("In extend_inode_indirect\n");
+
   ASSERT(disk_inode != NULL);
   ASSERT(disk_inode->sectors_allocated > 10);
 
@@ -215,6 +217,9 @@ block_sector_t get_individual_sector(void) {
 }
 
 bool inode_create(block_sector_t sector, off_t length) {
+
+  ASSERT(sector == 10);
+
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -226,7 +231,7 @@ bool inode_create(block_sector_t sector, off_t length) {
     size_t sectors = bytes_to_sectors(length);
     size_t sectors_allocated = 0;
 
-    disk_inode->sectors_allocated = sectors;
+    disk_inode->sectors_allocated = 0;
     disk_inode->length = length;
     disk_inode->sector = sector;
     disk_inode->magic = INODE_MAGIC;

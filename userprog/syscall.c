@@ -142,11 +142,14 @@ static void syscall_handler (struct intr_frame *f UNUSED) {
     f->eax = tell(args);
   } else if (*args == SYS_CLOSE) {
     close(args);
-  } else if (*args == SYS_MMAP) {
+  }
+#ifdef VM
+  else if (*args == SYS_MMAP) {
      f->eax = mmap(args);
   } else if (*args == SYS_MUNMAP) {
      munmap(args);
   }
+#endif
 }
 
 static pid_t exec (uint32_t *args) {
@@ -381,7 +384,7 @@ static int read(uint32_t *args) {
  int bytes_read = 0;
 
 
- // 
+ //
  // printf("%%ESP: %x\n", thread_current()->stack);
  // printf("Read called...address is: %x\n", buffer);
  //
