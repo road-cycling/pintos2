@@ -85,18 +85,17 @@ int extend_inode_direct(struct inode_disk *disk_inode, block_sector_t sectors_to
 
    if (write_back)
     block_write(fs_device, disk_inode->sector, disk_inode);
-
-
-    disk_inode->sectors_allocated += count_direct_blocks_to_allocate;
-    return sectors_to_allocate - count_direct_blocks_to_allocate;
+  disk_inode->sectors_allocated += count_direct_blocks_to_allocate;
+  return sectors_to_allocate - count_direct_blocks_to_allocate;
 }
 
 int extend_inode_indirect(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
 
-  printf("In extend_inode_indirect\n");
+  // printf("In extend_inode_indirect\n");
 
   ASSERT(disk_inode != NULL);
-  ASSERT(disk_inode->sectors_allocated > 10);
+  // printf("disk_inode->sectors_allocated = %d\n", disk_inode->sectors_allocated);
+  ASSERT(disk_inode->sectors_allocated >= 10);
 
   int indirect_blocks_allocated = disk_inode->sectors_allocated - 10;
   int indirect_blocks_unallocated = 128 - indirect_blocks_allocated;
@@ -153,7 +152,9 @@ int extend_inode_dbl_indirect(struct inode_disk *disk_inode, block_sector_t sect
 
     //get the sector;
     block_read(fs_device, disk_inode->double_indirect_block, mock_sector);
-    memcpy(mock_sector + base_sector * sizeof(uint32_t), &sector, sizeof(uint32_t));
+    sector = ((uint32_t *)mock_sector) [base_sector];
+
+    // memcpy(mock_sector + base_sector * sizeof(uint32_t), &sector, sizeof(uint32_t));
 
     //get the second block
     if (sector_ofs != 0)
@@ -188,7 +189,7 @@ int chunk_sector_blocks(void *page, int num_to_allocate, int chunk_size, int sta
       int i = 0;
       for (; i < chunk_size; i++) {
         int page_idx = sectors_allocated + start_idx;
-        memset(page + page_idx * sizeof(uint32_t), start + i, sizeof(uint32_t));
+        ((uint32_t *)page) [page_idx] = start + i;
         sectors_allocated++;
       }
     } else {
@@ -218,8 +219,6 @@ block_sector_t get_individual_sector(void) {
 
 bool inode_create(block_sector_t sector, off_t length) {
 
-  ASSERT(sector == 10);
-
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -236,20 +235,22 @@ bool inode_create(block_sector_t sector, off_t length) {
     disk_inode->sector = sector;
     disk_inode->magic = INODE_MAGIC;
 
-    sectors_allocated = extend_inode_direct(disk_inode, sectors, false);
-    sectors -= sectors_allocated;
+    sectors = extend_inode_direct(disk_inode, sectors, false);
+    // sectors -= sectors_allocated;
 
     disk_inode->indirect_block_sector = get_individual_sector();
     disk_inode->double_indirect_block = get_individual_sector();
 
     if (sectors > 0) {
-      sectors_allocated = extend_inode_indirect(disk_inode, sectors);
-      sectors -= sectors_allocated;
+      // sectors_allocated = extend_inode_indirect(disk_inode, sectors);
+      sectors = extend_inode_indirect(disk_inode, sectors);
+      // sectors -= sectors_allocated;
     }
 
     if (sectors > 0) {
-      sectors_allocated = extend_inode_dbl_indirect(disk_inode, sectors);
-      sectors -= sectors_allocated;
+      sectors = extend_inode_dbl_indirect(disk_inode, sectors);
+      // sectors_allocated = extend_inode_dbl_indirect(disk_inode, sectors);
+      // sectors -= sectors_allocated;
     }
 
     ASSERT (sectors == 0);
@@ -258,7 +259,6 @@ bool inode_create(block_sector_t sector, off_t length) {
     success = true;
     free(disk_inode);
   }
-
   return success;
 }
 
@@ -383,32 +383,40 @@ block_sector_t inode_offset_to_sector(struct inode_disk *inode_d, off_t current_
 
   ASSERT(inode_d->sectors_allocated * 512 >= current_offset);
 
+  // printf("inode_offset_to_sector(%p, %d)\n", inode_d, current_offset);
   int sector_count = current_offset / 512;
 
-  if (sector_count >= 1 && sector_count <= 10)
-    return inode_d->direct_block_sectors[sector_count - 1];
+
+  if (sector_count >= 0 && sector_count <= 9)
+    return inode_d->direct_block_sectors[sector_count];
 
   sector_count -= 10;
 
-  void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
-  if (sector_count >= 1 && sector_count <= 128) {
+  uint32_t *mock_sector = malloc(BLOCK_SECTOR_SIZE);
+  if (sector_count >= 0 && sector_count <= 127) {
     block_sector_t sector;
     block_read(fs_device, inode_d->indirect_block_sector, mock_sector);
-    memcpy(&sector, mock_sector + sizeof(uint32_t) * (sector_count - 1), sizeof(uint32_t));
+    sector = mock_sector[sector_count];
+    // memcpy(&sector, mock_sector + sizeof(uint32_t) * (sector_count - 1), sizeof(uint32_t));
+    // printf("\nSector is: %d\n", sector);
     free(mock_sector);
     return sector;
   }
   sector_count -= 128;
 
-  if (sector_count >= 1 && sector_count <= 16384) { /* 128 * 128 */
-    int indirect_sector = (sector_count - 1) / 128;
+  if (sector_count >= 0 && sector_count <= 16383) { /* 128 * 128 */
+    // int indirect_sector = (sector_count - 1) / 128;
+    int indirect_sector = sector_count / 128;
     block_sector_t sector;
     block_read(fs_device, inode_d->double_indirect_block, mock_sector);
-    memcpy(&sector, mock_sector + sizeof(uint32_t) * indirect_sector, sizeof(uint32_t));
+    sector = mock_sector[indirect_sector];
+    // memcpy(&sector, mock_sector + sizeof(uint32_t) * indirect_sector, sizeof(uint32_t));
     block_read(fs_device, sector, mock_sector);
 
-    int pos = (sector_count - 1) % BLOCK_SECTOR_SIZE;
-    memcpy(&sector, mock_sector + sizeof(uint32_t) * pos, sizeof(uint32_t));
+    // int pos = (sector_count - 1) % BLOCK_SECTOR_SIZE;
+    int pos = sector_count % BLOCK_SECTOR_SIZE;
+    sector = mock_sector[pos];
+    // memcpy(&sector, mock_sector + sizeof(uint32_t) * pos, sizeof(uint32_t));
 
     free(mock_sector);
     return sector;
@@ -618,6 +626,7 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
       /* Sector to write, starting byte offset within sector. */
 #ifdef FILESYS
       block_sector_t sector_idx = inode_offset_to_sector(&inode->data, offset);
+      printf("sector_idx: %d\n", sector_idx);
 #else
       block_sector_t sector_idx = byte_to_sector (inode, offset);
 #endif
