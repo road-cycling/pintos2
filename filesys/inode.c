@@ -119,56 +119,106 @@ int extend_inode_indirect(struct inode_disk *disk_inode, block_sector_t sectors_
 
 
 int extend_inode_dbl_indirect(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
+
   ASSERT(disk_inode != NULL);
 
-  int blocks_allocated = 0;
-  int dbl_indirect_sectors = disk_inode->sectors_allocated - 10 - 128;
+  if (sectors_to_allocate == 0)
+    return 0;
 
-  ASSERT((16384 - dbl_indirect_sectors) > sectors_to_allocate);
+  int sectors_used = disk_inode->sectors_allocated - 10 - 128;
 
+  int current_blocks_used = DIV_ROUND_UP(sectors_used, 128);
+  int blocks_needed = DIV_ROUND_UP(sectors_used + sectors_to_allocate, 128);
 
-  int current_blocks_used = DIV_ROUND_UP(dbl_indirect_sectors, 128);
-  int blocks_needed = DIV_ROUND_UP(dbl_indirect_sectors + sectors_to_allocate, 128);
-
-  void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
-
-  //Note: This doesn't count as allocated blocks.
-  // I am only counting blocks that point to sectors
-  // intended for use by files (not blocks of sector #)
-  if (blocks_needed != current_blocks_used) {
-    int difference = blocks_needed - current_blocks_used;
-    chunk_sector_blocks(mock_sector, difference, difference, current_blocks_used);
-    block_write(fs_device, disk_inode->double_indirect_block, mock_sector);
+  void *indirect_block = malloc(BLOCK_SECTOR_SIZE);
+  if (current_blocks_used != blocks_needed) {
+    int diff = blocks_needed - current_blocks_used;
+    chunk_sector_blocks(indirect_block, diff, diff, current_blocks_used);
+    block_write(fs_device, disk_inode->double_indirect_block, indirect_block);
   }
 
-  memset(mock_sector, 0, BLOCK_SECTOR_SIZE);
+  // memset(mock_sector, 0, BLOCK_SECTOR_SIZE);
   block_sector_t sector;
 
+  void *block = malloc(BLOCK_SECTOR_SIZE);
+
   while (sectors_to_allocate > 0) {
-    int base_sector = sectors_to_allocate / 128;
-    int sector_ofs = dbl_indirect_sectors % 128;
-    int max_sector_create = 128 - sector_ofs;
-    int num_to_create_round = max_sector_create > sectors_to_allocate ? sectors_to_allocate : max_sector_create;
+    int base_sector = sectors_used / 128;
+    int sector_ofs = sectors_used % 128;
 
-    //get the sector;
-    block_read(fs_device, disk_inode->double_indirect_block, mock_sector);
-    sector = ((uint32_t *)mock_sector) [base_sector];
+    int max_sector_to_allocate = 128 - sector_ofs;
+    int num_to_allocate_round = max_sector_to_allocate > sectors_to_allocate ? sectors_to_allocate : max_sector_to_allocate;
 
-    // memcpy(mock_sector + base_sector * sizeof(uint32_t), &sector, sizeof(uint32_t));
+    // block_read(fs_device, disk_inode->double_indirect_block, mock_sector);
+    sector = ((uint32_t *)indirect_block) [base_sector];
 
-    //get the second block
-    if (sector_ofs != 0)
-      block_read(fs_device, sector, mock_sector);
-    chunk_sector_blocks(mock_sector, num_to_create_round, num_to_create_round, sector_ofs);
-    block_write(fs_device, sector, mock_sector);
+    block_read(fs_device, sector, block);
+    chunk_sector_blocks(block, num_to_allocate_round, num_to_allocate_round, sector_ofs);
+    block_write(fs_device, sector, block);
 
-    blocks_allocated += num_to_create_round;
-    sectors_to_allocate -= num_to_create_round;
-    dbl_indirect_sectors += num_to_create_round;
+
+    sectors_to_allocate -= num_to_allocate_round;
+    sectors_used += num_to_allocate_round;
   }
 
-  return sectors_to_allocate; //number of sectors left. Will be 0 / if not kernel would panic earlier.
+  free(block);
+  free(indirect_block);
+
+  return sectors_to_allocate;
+
 }
+//
+// int extend_inode_dbl_indirect(struct inode_disk *disk_inode, block_sector_t sectors_to_allocate) {
+//   ASSERT(disk_inode != NULL);
+//
+//   int blocks_allocated = 0;
+//   int dbl_indirect_sectors = disk_inode->sectors_allocated - 10 - 128;
+//
+//   ASSERT((16384 - dbl_indirect_sectors) > sectors_to_allocate);
+//
+//
+//   int current_blocks_used = DIV_ROUND_UP(dbl_indirect_sectors, 128);
+//   int blocks_needed = DIV_ROUND_UP(dbl_indirect_sectors + sectors_to_allocate, 128);
+//
+//   void *mock_sector = malloc(BLOCK_SECTOR_SIZE);
+//
+//   //Note: This doesn't count as allocated blocks.
+//   // I am only counting blocks that point to sectors
+//   // intended for use by files (not blocks of sector #)
+//   if (blocks_needed != current_blocks_used) {
+//     int difference = blocks_needed - current_blocks_used;
+//     chunk_sector_blocks(mock_sector, difference, difference, current_blocks_used);
+//     block_write(fs_device, disk_inode->double_indirect_block, mock_sector);
+//   }
+//
+//   memset(mock_sector, 0, BLOCK_SECTOR_SIZE);
+//   block_sector_t sector;
+//
+//   while (sectors_to_allocate > 0) {
+//     int base_sector = sectors_to_allocate / 128;
+//     int sector_ofs = dbl_indirect_sectors % 128;
+//     int max_sector_create = 128 - sector_ofs;
+//     int num_to_create_round = max_sector_create > sectors_to_allocate ? sectors_to_allocate : max_sector_create;
+//
+//     //get the sector;
+//     block_read(fs_device, disk_inode->double_indirect_block, mock_sector);
+//     sector = ((uint32_t *)mock_sector) [base_sector];
+//
+//     // memcpy(mock_sector + base_sector * sizeof(uint32_t), &sector, sizeof(uint32_t));
+//
+//     //get the second block
+//     if (sector_ofs != 0)
+//       block_read(fs_device, sector, mock_sector);
+//     chunk_sector_blocks(mock_sector, num_to_create_round, num_to_create_round, sector_ofs);
+//     block_write(fs_device, sector, mock_sector);
+//
+//     blocks_allocated += num_to_create_round;
+//     sectors_to_allocate -= num_to_create_round;
+//     dbl_indirect_sectors += num_to_create_round;
+//   }
+//
+//   return sectors_to_allocate; //number of sectors left. Will be 0 / if not kernel would panic earlier.
+// }
 
 
 
@@ -228,7 +278,7 @@ bool inode_create(block_sector_t sector, off_t length) {
   disk_inode = calloc(1, sizeof *disk_inode);
   if (disk_inode != NULL) {
     size_t sectors = bytes_to_sectors(length);
-    size_t sectors_allocated = 0;
+    // size_t sectors_allocated = 0;
 
     disk_inode->sectors_allocated = 0;
     disk_inode->length = length;
@@ -271,6 +321,7 @@ int release_direct_block(struct inode *inode, int sectors_to_clear) {
 
   if (is_direct_block_sequential(inode, num_to_free)) {
     free_map_release(inode->data.direct_block_sectors[0], num_to_free);
+    return sectors_to_clear - num_to_free;
   } else {
     int i = 0;
     for (; i < num_to_free; i++)
@@ -350,7 +401,7 @@ int release_double_indirect_block(struct inode *inode, int sectors_to_clear) {
     sectors_to_clear = release_block(sector, sectors_to_clear);
     free_map_release(sector, 1);
   }
-
+  return sectors_to_clear;
 }
 
 void inode_close(struct inode *inode) {
@@ -622,8 +673,28 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size, off_t
   if (inode->deny_write_cnt)
     return 0;
 
-  while (size > 0)
-    {
+#ifdef FILESYS
+  int sectors_requested_access = DIV_ROUND_UP(size + offset, BLOCK_SECTOR_SIZE);
+  if (sectors_requested_access > inode->data.sectors_allocated) {
+      int sectors_to_create = sectors_requested_access - inode->data.sectors_allocated;
+
+      if (sectors_to_create > 0 && inode->data.sectors_allocated < 10)
+        sectors_to_create = extend_inode_direct(&inode->data, sectors_to_create, true);
+
+      if (sectors_to_create > 0 && inode->data.sectors_allocated >= 10 && inode->data.sectors_allocated < 138)
+        sectors_to_create = extend_inode_indirect(&inode->data, sectors_to_create);
+
+      if (sectors_to_create > 0 && inode->data.sectors_allocated >= 138 && inode->data.sectors_allocated < 16552)
+        sectors_to_create = extend_inode_dbl_indirect(&inode->data, sectors_to_create);
+
+      if (sectors_to_create > 0) {
+        printf("You cannot grow your file past 8,459,264 bytes\n");
+        return 0;
+      }
+  }
+#endif
+
+  while (size > 0) {
       /* Sector to write, starting byte offset within sector. */
 #ifdef FILESYS
       block_sector_t sector_idx = inode_offset_to_sector(&inode->data, offset);
