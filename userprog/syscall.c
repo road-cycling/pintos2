@@ -481,7 +481,7 @@ static int read(uint32_t *args) {
 #endif
  lock_release(&fileSystemLock);
 
- printf("Bytes Read: %d\n", bytes_read);
+ // printf("Bytes Read: %d\n", bytes_read);
  return bytes_read;
 }
 
